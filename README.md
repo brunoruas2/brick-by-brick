@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="https://github.com/brunoruas2/brick-by-brick/assets/16859514/3dc6e301-3ac8-4809-ad5e-ef62a83d9dff" alt="Logo Brick by Brick" width="20%">
-</p>
+![image](https://github.com/brunoruas2/brick-by-brick/assets/16859514/2225d5cf-f6e0-4de2-9f66-a19990275061)
 
 # Brick by Brick
 Python module for obtain data about Brazilian Reits (FIIS)
