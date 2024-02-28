@@ -1,0 +1,48 @@
+[tool.poetry]
+name = "brick-by-brick"
+version = "0.1.0"
+description = ""
+authors = ["azevedo <azevedoantoniocicero@gmail.com>"]
+readme = "README.md"
+packages = [{include = "brick_by_brick"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+numpy = "^1.26.4"
+pandas = "^2.2.1"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.2"
+pytest-cov = "^4.1.0"
+taskipy = "^1.12.2"
+blue = "^0.9.1"
+ruff = "^0.2.2"
+isort = "^5.13.2"
+
+[tool.ruff]
+line-length = 79
+exclude = ['.venv', 'migrations']
+
+[tool.isort]
+profile = "black"
+line_length = 79
+extend_skip = ['migrations']
+
+[tool.pytest.ini_options]
+pythonpath = "."
+
+[tool.blue]
+extend-exclude = '(migrations/)'
+
+[tool.taskipy.tasks]
+lint = 'ruff . && blue --check . --diff && isort --check . --diff'
+format = 'blue .  && isort .'
+pre_test = 'task lint'
+test = 'pytest -s -x --cov=brick_by_brick -vv'
+post_test = 'coverage html'
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
