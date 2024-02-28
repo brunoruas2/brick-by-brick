@@ -28,15 +28,24 @@ To get started with Brick By Brick, follow these steps:
     - [Pandas](https://github.com/pandas-dev/pandas)
     - [SQLite](https://github.com/sqlite/sqlite)
 ### Installation
+
 ```bash
 $ pip install brick_by_brick
+```
+
+###### or
+
+```bash
+$ pip install git+https://github.com/brunoruas2/brick-by-brick
 ```
 
 ### Examples
 ```py
 import brick_by_brick as bbb
 ```
+
 ## Contribute to the project
-If you want helps us in the project, read the [file](CONTRIBUTING.md)
+If you want helps us in the project, look the directory [contributing](contributing/en.md)
+
 ### License
 This project is licensed under the therms of the MIT license
