@@ -21,8 +21,22 @@ Brick By Brick is a Python module designed to build a solid foundation for real 
 ## Getting Started
 To get started with Brick By Brick, follow these steps:
 
-### Prerequisites
-- Python 3.x
-- Install required dependencies by running:
-  ```bash
-  pip install -r requirements.txt
+### Requirements
+- Python 3.11+
+- brick-by-brick uses in or core:
+    - [Numpy](https://github.com/numpy/numpy)
+    - [Pandas](https://github.com/pandas-dev/pandas)
+    - [SQLite](https://github.com/sqlite/sqlite)
+### Installation
+```bash
+$ pip install brick_by_brick
+```
+
+### Examples
+```py
+import brick_by_brick as bbb
+```
+## Contribute to the project
+If you want helps us in the project, read the [file](CONTRIBUTING.md)
+### License
+This project is licensed under the therms of the MIT license
