@@ -6,7 +6,7 @@
 Python module for obtain data about Brazilian Reits (FIIS)
 
 ## Disclaimer
-This is a ongoing project. To see the current development state check de [milestones page](https://github.com/brunoruas2/brick-by-brick/milestones?direction=asc&sort=title&state=open).
+This is an ongoing project. To see the current development state check de [milestones page](https://github.com/brunoruas2/brick-by-brick/milestones?direction=asc&sort=title&state=open).
 
 ## Overview
 Brick By Brick is a Python module designed to build a solid foundation for real estate investment decisions by efficiently collecting publicly available data on Fundos de Investimento Imobiliário (FIIs) in Brazil (The Brazilian version of Reits). The module offers a seamless way to aggregate crucial information, empowering developers, analysts, and enthusiasts with comprehensive data for analysis and decision-making.
