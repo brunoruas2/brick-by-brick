@@ -45,7 +45,7 @@ import brick_by_brick as bbb
 ```
 
 ## Contribute to the project
-If you want helps us in the project, look the directory [contributing](contributing/en.md)
+If you want helps us in the project, look the directory [contributing](contributing/en.md) or [contribuindo (pt-br)](https://github.com/brunoruas2/brick-by-brick/blob/main/contributing/pt-br.md)
 
 ### License
 This project is licensed under the therms of the MIT license
