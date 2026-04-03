@@ -1,5 +1,18 @@
 # Roadmap: Sistema de Análise de Fundos Imobiliários (FIIs) em Python
 
+## Decisões de escopo — v1
+
+| Decisão | Escolha | Motivo |
+|---|---|---|
+| Interface | **CLI apenas** | Sem dependências de frontend; portátil e scriptável |
+| Storage | **SQLite local** | Zero infraestrutura; arquivo único; suficiente para o volume de dados |
+| Saída de dados | **Tabelas no terminal** (`rich`) | Legível, sem necessidade de browser ou servidor |
+| Fontes de dados | **Primárias e públicas** | CVM, B3, BCB, IBGE — sem risco de terceiros |
+| Sem GUI | Dashboard, HTML, PDF fora do escopo v1 | Pode ser v2 |
+| Sem Jupyter | Notebooks fora do escopo v1 | Exploração via CLI |
+
+---
+
 ## Princípio fundamental
 
 > **Usar apenas fontes primárias, públicas e gratuitas.**
@@ -48,13 +61,6 @@ Preços de mercado diários desde 1986. Arquivo de largura fixa, sem autenticaç
 
 ```
 https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A{ANO}.ZIP
-```
-
-Exemplos:
-```
-https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A2023.ZIP
-https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A2024.ZIP
-https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A2025.ZIP
 ```
 
 **Como identificar FIIs no arquivo:** filtrar `CODBDI == "12"` (código BDI para Fundos Imobiliários).
@@ -148,44 +154,68 @@ Retorna JSON com metadados e link para PDF. Sem autenticação.
 | IPCA (benchmark) | BCB SGS / IBGE SIDRA | Série 433 |
 | Relatórios de gestão (PDF) | FundosNet | `/downloadDocumento?id=` |
 
-> **Nota sobre vacância:** O informe mensal não tem um campo direto de "taxa de vacância". Ela pode ser inferida a partir de `Contas_Receber_Aluguel` e `Imoveis_Renda_Acabados` vs `Total_Ativo`, ou extraída dos relatórios de gestão mensais via FundosNet (PDF). Esta será a única informação que exigirá parsing de PDF.
+> **Nota sobre vacância:** O informe mensal não tem um campo direto de "taxa de vacância". Ela pode ser inferida a partir de `Contas_Receber_Aluguel` e `Imoveis_Renda_Acabados` vs `Total_Ativo`, ou extraída dos relatórios de gestão mensais via FundosNet (PDF). Esta será a única informação que exige parsing de PDF — fora do escopo v1.
 
 ---
 
 ## Arquitetura do Projeto
 
 ```
-fii_analyzer/
+brick-by-brick/
 ├── src/
 │   ├── collectors/
-│   │   ├── cvm_cadastro.py         # cad_fi.csv — lista e cadastro de todos os FIIs
-│   │   ├── cvm_inf_mensal.py       # Informe mensal — DY, PL, rentabilidade, ativos
-│   │   ├── cvm_inf_diario.py       # Informe diário — VL_QUOTA e PL diários
-│   │   ├── b3_cotahist.py          # COTAHIST — preço de mercado histórico
-│   │   ├── bcb_series.py           # API BCB — SELIC, CDI, IPCA
-│   │   └── fundosnet.py            # Documentos dos fundos (PDF)
+│   │   ├── cvm_cadastro.py      # cad_fi.csv — cadastro de todos os FIIs
+│   │   ├── cvm_inf_mensal.py    # Informe mensal — DY, PL, rentabilidade, ativos
+│   │   ├── cvm_inf_diario.py    # Informe diário — VL_QUOTA e PL diários
+│   │   ├── b3_cotahist.py       # COTAHIST — preço de mercado histórico
+│   │   └── bcb_series.py        # API BCB — SELIC, CDI, IPCA
 │   ├── storage/
-│   │   └── database.py             # SQLite + Parquet
+│   │   └── database.py          # SQLite: criação de tabelas e upserts
 │   ├── analysis/
-│   │   ├── indicadores.py          # Calcular P/VP, DY acumulado, liquidez média
-│   │   ├── screener.py             # Filtros e ranking
-│   │   └── comparador.py           # Comparação entre FIIs
+│   │   ├── indicadores.py       # Calcular P/VP, DY 12m, liquidez, spread vs SELIC
+│   │   ├── screener.py          # Filtros e ranking configurável
+│   │   └── comparador.py        # Comparação lado a lado entre FIIs
 │   ├── portfolio/
-│   │   ├── carteira.py             # Gestão de posições
-│   │   └── relatorio_mensal.py     # Relatório mensal
-│   ├── reports/
-│   │   └── dashboard.py            # Gráficos e visualizações (Plotly)
-│   └── alerts/
-│       └── monitor.py              # Alertas automáticos
-├── data/                           # Dados locais (no .gitignore)
-│   ├── raw/                        # Arquivos brutos baixados (ZIP, CSV)
-│   ├── processed/                  # Dados processados (Parquet)
-│   └── database.sqlite             # Banco relacional
-├── notebooks/                      # Jupyter para exploração
-├── config.yaml                     # Configurações gerais
-├── carteira.json                   # Carteira do usuário
-└── main.py                         # CLI principal
+│   │   ├── carteira.py          # Gestão de posições e movimentações
+│   │   └── relatorio.py         # Relatório mensal em texto/tabela
+│   └── cli/
+│       └── commands.py          # Definição dos comandos Typer
+├── data/                        # Dados locais — no .gitignore
+│   ├── raw/                     # ZIPs e CSVs brutos baixados
+│   └── brickbybrick.sqlite      # Banco de dados local
+├── config.yaml                  # Configurações e pesos do screener
+├── carteira.json                # Posições do usuário
+├── main.py                      # Entry point da CLI
+└── requirements.txt
 ```
+
+---
+
+## CLI — Comandos planejados
+
+```bash
+# Atualizar base de dados
+python main.py update                        # Baixa todos os dados (CVM + B3 + BCB)
+python main.py update --source cvm           # Apenas dados da CVM
+python main.py update --source b3 --year 2024
+
+# Screener
+python main.py screen                        # Ranking com filtros padrão
+python main.py screen --dy-min 8 --pvp-max 1.1 --top 20
+python main.py screen --segmento logistica
+
+# Informações de um FII
+python main.py info HGLG11                   # Indicadores atuais + histórico de DY
+python main.py compare HGLG11 XPLG11 BTLG11 # Comparação lado a lado
+
+# Carteira
+python main.py portfolio add HGLG11 50 165.20 2024-03-15   # Registrar compra
+python main.py portfolio show                # Posições atuais com P&L
+python main.py portfolio report              # Relatório mensal no terminal
+python main.py portfolio report --month 2025-12
+```
+
+Saída no terminal via `rich`: tabelas coloridas, indicadores com destaques visuais.
 
 ---
 
@@ -225,111 +255,116 @@ fii_analyzer/
 
 ---
 
-### Fase 2 — Armazenamento
+### Fase 2 — Armazenamento (SQLite)
 **Status:** `[ ] Pendente`
 
-**Objetivo:** Persistir os dados de forma eficiente para consultas históricas.
+**Objetivo:** Persistir todos os dados em banco SQLite local.
 
-**Estrutura do banco SQLite:**
+`src/storage/database.py`
+- Criação do schema e migrations simples
+- Função `upsert()` para todos os dados (idempotente: rodar update duas vezes não duplica)
+- Índices nas colunas mais consultadas (ticker, cnpj, data)
+
+**Schema:**
 
 ```sql
 -- Cadastro dos fundos
 CREATE TABLE fiis (
-    cnpj TEXT PRIMARY KEY,
-    ticker TEXT,
-    nome TEXT,
-    situacao TEXT,
-    segmento TEXT,
-    mandato TEXT,
-    gestor TEXT,
+    cnpj        TEXT PRIMARY KEY,
+    ticker      TEXT,
+    nome        TEXT,
+    situacao    TEXT,
+    segmento    TEXT,
+    mandato     TEXT,
+    gestor      TEXT,
     administrador TEXT,
-    taxa_adm REAL,
+    taxa_adm    REAL,
     data_inicio DATE,
     atualizado_em TIMESTAMP
 );
 
 -- Preço de mercado diário (B3 COTAHIST)
 CREATE TABLE cotacoes (
-    ticker TEXT,
-    data DATE,
-    abertura REAL,
-    maxima REAL,
-    minima REAL,
-    fechamento REAL,
-    volume REAL,
-    negocios INTEGER,
+    ticker      TEXT,
+    data        DATE,
+    abertura    REAL,
+    maxima      REAL,
+    minima      REAL,
+    fechamento  REAL,
+    volume      REAL,
+    negocios    INTEGER,
     PRIMARY KEY (ticker, data)
 );
 
 -- Valor da cota oficial diário (CVM Informe Diário)
 CREATE TABLE cota_oficial (
-    cnpj TEXT,
-    data DATE,
-    vl_quota REAL,
+    cnpj                TEXT,
+    data                DATE,
+    vl_quota            REAL,
     vl_patrimonio_liquido REAL,
-    nr_cotistas INTEGER,
+    nr_cotistas         INTEGER,
     PRIMARY KEY (cnpj, data)
 );
 
--- Informe mensal consolidado
+-- Informe mensal consolidado (CVM)
 CREATE TABLE inf_mensal (
-    cnpj TEXT,
-    data_referencia DATE,
-    dy_mes REAL,
-    rentabilidade_efetiva_mes REAL,
+    cnpj                         TEXT,
+    data_referencia              DATE,
+    dy_mes                       REAL,
+    rentabilidade_efetiva_mes    REAL,
     rentabilidade_patrimonial_mes REAL,
-    patrimonio_liquido REAL,
-    cotas_emitidas REAL,
-    valor_patrimonial_cota REAL,  -- VPA
-    nr_cotistas INTEGER,
-    taxa_adm REAL,
-    rendimentos_a_distribuir REAL,
-    imoveis_renda REAL,
-    cri REAL,
-    lci REAL,
-    contas_receber_aluguel REAL,
+    patrimonio_liquido           REAL,
+    cotas_emitidas               REAL,
+    valor_patrimonial_cota       REAL,   -- VPA
+    nr_cotistas                  INTEGER,
+    taxa_adm                     REAL,
+    rendimentos_a_distribuir     REAL,
+    imoveis_renda                REAL,
+    cri                          REAL,
+    lci                          REAL,
+    contas_receber_aluguel       REAL,
     PRIMARY KEY (cnpj, data_referencia)
 );
 
--- Benchmarks mensais
+-- Benchmarks mensais (BCB + IBGE)
 CREATE TABLE benchmarks (
-    data DATE PRIMARY KEY,
+    data      DATE PRIMARY KEY,
     selic_mes REAL,
-    cdi_mes REAL,
-    ipca_mes REAL
+    cdi_mes   REAL,
+    ipca_mes  REAL
 );
 
 -- Carteira do usuário
 CREATE TABLE carteira (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker TEXT,
-    cnpj TEXT,
-    cotas INTEGER,
-    preco_medio REAL,
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker       TEXT,
+    cnpj         TEXT,
+    cotas        INTEGER,
+    preco_medio  REAL,
     data_entrada DATE,
-    ativa BOOLEAN DEFAULT 1
+    ativa        BOOLEAN DEFAULT 1
 );
 
 -- Movimentações
 CREATE TABLE movimentacoes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker TEXT,
-    tipo TEXT,  -- 'compra', 'venda', 'provento'
-    data DATE,
-    quantidade INTEGER,
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker         TEXT,
+    tipo           TEXT,    -- 'compra', 'venda', 'provento'
+    data           DATE,
+    quantidade     INTEGER,
     preco_unitario REAL,
-    valor_total REAL
+    valor_total    REAL
 );
 ```
 
-**Entregável:** Banco SQLite populado + arquivos Parquet em `data/processed/`.
+**Entregável:** Banco SQLite populado e idempotente (`data/brickbybrick.sqlite`).
 
 ---
 
 ### Fase 3 — Cálculo de indicadores
 **Status:** `[ ] Pendente`
 
-**Objetivo:** Derivar os indicadores analíticos a partir dos dados brutos.
+**Objetivo:** Derivar os indicadores analíticos a partir dos dados brutos no SQLite.
 
 `src/analysis/indicadores.py`
 
@@ -345,123 +380,102 @@ dy_12m = df_inf_mensal["dy_mes"].tail(12).sum()
 # Liquidez média 30 dias
 liquidez_30d = df_cotacoes["volume"].tail(30).mean()
 
-# Yield on Cost (para carteira) = DY / preço médio de compra
-yield_on_cost = provento_mensal / preco_medio_compra * 12
-
 # Spread sobre SELIC = DY 12m - SELIC 12m acumulada
 spread_selic = dy_12m - selic_acumulada_12m
 
-# Consistência de proventos = desvio padrão dos DY mensais (quanto menor, mais estável)
+# Consistência de proventos = desvio padrão dos DY mensais (menor = mais estável)
 consistencia = df_inf_mensal["dy_mes"].tail(12).std()
+
+# Yield on Cost (carteira) = provento mensal / preço médio de compra × 12
+yield_on_cost = provento_mensal / preco_medio_compra * 12
 ```
 
-**Entregável:** Módulo de indicadores com todos os cálculos documentados e testados.
+**Entregável:** Módulo de indicadores com todos os cálculos documentados.
 
 ---
 
 ### Fase 4 — Screener e análise
 **Status:** `[ ] Pendente`
 
-**Objetivo:** Filtrar e rankear FIIs com base em critérios configuráveis.
+**Objetivo:** Filtrar e rankear FIIs via CLI com critérios configuráveis.
 
 `src/analysis/screener.py`
 
 Filtros disponíveis:
-- DY 12m mínimo (ex: > 8%)
-- P/VP máximo (ex: < 1.10)
-- Liquidez mínima 30d (ex: > R$ 500k)
-- Spread sobre SELIC mínimo (ex: > 2%)
-- Segmento / mandato
+- DY 12m mínimo (ex: `--dy-min 8`)
+- P/VP máximo (ex: `--pvp-max 1.10`)
+- Liquidez mínima 30d (ex: `--liq-min 500000`)
+- Spread sobre SELIC mínimo (ex: `--spread-min 2`)
+- Segmento / mandato (ex: `--segmento logistica`)
 - Situação cadastral ativa
 
-Score ponderado (configurável em `config.yaml`):
+Score ponderado — configurável em `config.yaml`:
 ```yaml
 screener:
   pesos:
-    dy_12m: 0.30
-    spread_selic: 0.25
-    p_vp: 0.20
-    liquidez: 0.15
+    dy_12m:               0.30
+    spread_selic:         0.25
+    p_vp:                 0.20
+    liquidez_30d:         0.15
     consistencia_proventos: 0.10
 ```
 
 `src/analysis/comparador.py`
-- Comparar dois ou mais FIIs lado a lado
-- Evolução histórica de DY mensal e P/VP
-- Rentabilidade acumulada vs SELIC e IPCA
+- Comparar dois ou mais FIIs lado a lado em tabela `rich`
+- Indicadores atuais + histórico de DY dos últimos 12 meses em linha
 
-**Entregável:** CLI com ranking de FIIs por score e comparativo entre fundos.
+**Entregável:** Comando `screen` e `compare` funcionando no terminal.
 
 ---
 
 ### Fase 5 — Gestão da carteira
 **Status:** `[ ] Pendente`
 
-**Objetivo:** Registrar operações e calcular rentabilidade real da carteira.
+**Objetivo:** Registrar operações e calcular rentabilidade real via CLI.
 
 `src/portfolio/carteira.py`
 - Registrar compras/vendas na tabela `movimentacoes`
 - Calcular posição atual: cotas, preço médio, custo total
-- Proventos recebidos por ativo (DY do mês × cotas × preço médio)
+- Proventos estimados por ativo (DY do mês × cotas)
 - P&L de capital: (preço atual − preço médio) × cotas
 - Rentabilidade total: (P&L capital + proventos) / custo total
 
-`src/portfolio/relatorio_mensal.py`
-- Snapshot mensal: valor da carteira, proventos do mês, rentabilidade
+`src/portfolio/relatorio.py`
+- Tabela mensal no terminal: posições, valor atual, proventos do mês, rentabilidade
 - Comparativo com SELIC e IPCA do mesmo período
-- Evolução histórica mês a mês
+- Totais consolidados da carteira
 
-**Entregável:** Sistema de controle de carteira com histórico de rentabilidade real.
-
----
-
-### Fase 6 — Dashboard e relatórios
-**Status:** `[ ] Pendente`
-
-**Objetivo:** Visualizações interativas e relatório HTML mensal.
-
-`src/reports/dashboard.py` (Plotly)
-
-Gráficos:
-- Evolução do patrimônio da carteira vs SELIC+IPCA
-- Dividendos recebidos por mês (barras empilhadas por FII)
-- Distribuição por segmento (pizza)
-- Heatmap de DY mensal por ativo (últimos 12 meses)
-- P/VP histórico de cada ativo com linha de compra marcada
-- Yield on Cost por ativo
-
-Relatório HTML mensal (via Jinja2):
-- Resumo executivo
-- Tabela de indicadores atuais da carteira
-- Alertas automáticos: queda de DY, P/VP acima de 1.15, spread negativo vs SELIC
-
-**Entregável:** Dashboard interativo + relatório HTML gerado todo dia 10 do mês.
+**Entregável:** Comandos `portfolio add`, `portfolio show` e `portfolio report` funcionando.
 
 ---
 
-### Fase 7 — Automação
+### Fase 6 — Automação
 **Status:** `[ ] Pendente`
 
-**Objetivo:** Coleta e relatórios automáticos sem intervenção manual.
+**Objetivo:** Atualizar a base automaticamente sem intervenção manual.
 
-Agenda de coleta:
+Agenda de coleta (via `schedule` ou cron do SO):
 - **Diária** (após 20h): COTAHIST do dia corrente, informe diário CVM
 - **Semanal** (domingo): Informe mensal CVM, cadastro de FIIs
-- **Mensal** (dia 10): Benchmarks BCB/IBGE, geração do relatório mensal
+- **Mensal** (dia 10): Benchmarks BCB/IBGE
 
-Alertas (via Telegram Bot ou e-mail):
+Alertas opcionais (Telegram ou e-mail):
 - FII da carteira com DY abaixo da média histórica
 - Novo fundo com score alto no screener
 - P/VP de ativo da carteira cruzou limiar configurado
 
-**Entregável:** Processo agendado com notificações automáticas.
+**Entregável:** Processo agendável com `python main.py update --schedule`.
 
 ---
 
-## Stack tecnológica
+## Stack tecnológica — v1
 
 ```
-# Coleta de dados — apenas fontes primárias
+# CLI
+typer             # Framework de CLI com subcomandos e --help automático
+rich              # Tabelas, cores e progresso no terminal
+
+# Coleta — apenas fontes primárias
 requests          # HTTP para CVM, B3, BCB, IBGE, FundosNet
 zipfile + io      # Extrair ZIPs em memória
 
@@ -470,22 +484,17 @@ pandas            # Manipulação de DataFrames e leitura de CSV
 numpy             # Cálculos numéricos
 
 # Armazenamento
-sqlite3           # Banco relacional local (sem dependência externa)
-pyarrow           # Arquivos Parquet para séries temporais longas
+sqlite3           # Banco relacional local (stdlib — sem dependência extra)
 
-# Visualização
-plotly            # Dashboard interativo
-
-# Relatórios
-jinja2            # Templates HTML
-
-# Alertas
-smtplib           # E-mail (nativo Python)
+# Alertas (Fase 6, opcional)
+smtplib              # E-mail (stdlib)
 python-telegram-bot  # Telegram
 
-# Agendamento
+# Agendamento (Fase 6, opcional)
 schedule          # Agendador simples em Python
 ```
+
+> Sem plotly, sem jinja2, sem pyarrow, sem Jupyter. Tudo roda no terminal.
 
 ---
 
@@ -493,13 +502,12 @@ schedule          # Agendador simples em Python
 
 | Etapa | Fase | Status |
 |---|---|---|
-| 1 | Fase 1 — Coleta CVM (cadastro + inf. mensal + inf. diário) + B3 COTAHIST + BCB | `[ ] Pendente` |
-| 2 | Fase 2 — Banco SQLite com todas as tabelas | `[ ] Pendente` |
-| 3 | Fase 3 — Cálculo de indicadores (P/VP, DY 12m, liquidez, spread) | `[ ] Pendente` |
-| 4 | Fase 4 — Screener com filtros e score ponderado | `[ ] Pendente` |
-| 5 | Fase 5 — Gestão de carteira + rentabilidade real | `[ ] Pendente` |
-| 6 | Fase 6 — Dashboard Plotly + relatório HTML mensal | `[ ] Pendente` |
-| 7 | Fase 7 — Automação + alertas Telegram | `[ ] Pendente` |
+| 1 | Fase 1 — Collectors: CVM (cadastro + inf. mensal + inf. diário) + B3 COTAHIST + BCB | `[ ] Pendente` |
+| 2 | Fase 2 — Storage: schema SQLite + upserts idempotentes | `[ ] Pendente` |
+| 3 | Fase 3 — Indicadores: P/VP, DY 12m, liquidez, spread vs SELIC | `[ ] Pendente` |
+| 4 | Fase 4 — CLI: screener (`screen`) e comparativo (`compare`) | `[ ] Pendente` |
+| 5 | Fase 5 — CLI: carteira (`portfolio add/show/report`) | `[ ] Pendente` |
+| 6 | Fase 6 — Automação: update agendado + alertas opcionais | `[ ] Pendente` |
 
 ---
 
