@@ -1,18 +1,6 @@
 <div align="center">
 
-```
-  ╔══════════════════════════╗
-  ║                          ║
-  ║    ◉               ◉    ║
-  ║                          ║
-  ║          ◡               ║
-  ║      ─────────           ║
-  ║                          ║
-  ╠══════════════════════════╣
-  ║  🧱  B R I C K I E  🧱  ║
-  ╚══════════════════════════╝
-        your FII analyst
-```
+<img src="logo.png" alt="Brickie — your FII analyst" width="340"/>
 
 # 🧱 Brick by Brick
 
@@ -41,18 +29,7 @@ The project is built on a single principle: **no third-party scrapers, no paid A
 
 ## Meet Brickie 🧱
 
-```
-  ╔══════════════════════════╗
-  ║                          ║
-  ║    ◉               ◉    ║
-  ║                          ║
-  ║          ◡               ║
-  ║      ─────────           ║
-  ║                          ║
-  ╠══════════════════════════╣
-  ║  🧱  B R I C K I E  🧱  ║
-  ╚══════════════════════════╝
-```
+<img src="logo.png" alt="Brickie — your FII analyst" width="260"/>
 
 **Brickie** is your no-nonsense FII analyst. He reads official CVM filings, crunches B3 price data, checks the BCB benchmark rates, and tells you which bricks are worth adding to your portfolio — and which ones have cracks.
 

@@ -1,18 +1,6 @@
 <div align="center">
 
-```
-  ╔══════════════════════════╗
-  ║                          ║
-  ║    ◉               ◉    ║
-  ║                          ║
-  ║          ◡               ║
-  ║      ─────────           ║
-  ║                          ║
-  ╠══════════════════════════╣
-  ║  🧱  B R I C K I E  🧱  ║
-  ╚══════════════════════════╝
-        seu analista de FIIs
-```
+<img src="logo.png" alt="Brickie — seu analista de FIIs" width="340"/>
 
 # 🧱 Brick by Brick
 
@@ -41,18 +29,7 @@ O projeto é construído sobre um único princípio: **sem scrapers de terceiros
 
 ## Conheça o Brickie 🧱
 
-```
-  ╔══════════════════════════╗
-  ║                          ║
-  ║    ◉               ◉    ║
-  ║                          ║
-  ║          ◡               ║
-  ║      ─────────           ║
-  ║                          ║
-  ╠══════════════════════════╣
-  ║  🧱  B R I C K I E  🧱  ║
-  ╚══════════════════════════╝
-```
+<img src="logo.png" alt="Brickie — seu analista de FIIs" width="260"/>
 
 **Brickie** é o seu analista de FIIs sem rodeios. Ele lê os informes oficiais da CVM, processa os dados de preço da B3, confere as taxas de referência do BCB e te diz quais tijolos valem a pena adicionar na sua carteira — e quais têm rachaduras.
 
