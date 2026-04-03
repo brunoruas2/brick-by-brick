@@ -1,6 +1,19 @@
 # Roadmap: Sistema de Análise de Fundos Imobiliários (FIIs) em Python
 
-## Decisões de escopo — v1
+## Milestones
+
+| Milestone | Escopo | Status |
+|---|---|---|
+| **M1 — Fundação** | Coleta de dados primários + storage SQLite | `[ ] Em andamento` |
+| **M2 — Análise** | Cálculo de indicadores, benchmarks e comparativos | `[ ] Futuro` |
+| **M3 — Carteira** | Gestão de posições, P&L, relatório mensal em texto | `[ ] Futuro` |
+| **M4 — Interface** | GUI (web, desktop ou dashboard) — escopo a definir | `[ ] Futuro` |
+
+> **Foco atual: M1.** Sem dados limpos e confiáveis no banco, nenhuma análise tem valor. Só avançamos para M2 quando a ingestão estiver estável e testada.
+
+---
+
+## Decisões de escopo — v1 (M1 + M2 + M3)
 
 | Decisão | Escolha | Motivo |
 |---|---|---|
@@ -8,8 +21,8 @@
 | Storage | **SQLite local** | Zero infraestrutura; arquivo único; suficiente para o volume de dados |
 | Saída de dados | **Tabelas no terminal** (`rich`) | Legível, sem necessidade de browser ou servidor |
 | Fontes de dados | **Primárias e públicas** | CVM, B3, BCB, IBGE — sem risco de terceiros |
-| Sem GUI | Dashboard, HTML, PDF fora do escopo v1 | Pode ser v2 |
-| Sem Jupyter | Notebooks fora do escopo v1 | Exploração via CLI |
+| GUI | Fora do escopo v1 — será M4 após M1–M3 validados | Decisão de tecnologia adiada |
+| Jupyter | Fora do escopo v1 | Exploração via CLI |
 
 ---
 
@@ -500,14 +513,35 @@ schedule          # Agendador simples em Python
 
 ## Sequência de implementação
 
-| Etapa | Fase | Status |
+### M1 — Fundação (foco atual)
+| Etapa | Descrição | Status |
 |---|---|---|
-| 1 | Fase 1 — Collectors: CVM (cadastro + inf. mensal + inf. diário) + B3 COTAHIST + BCB | `[ ] Pendente` |
-| 2 | Fase 2 — Storage: schema SQLite + upserts idempotentes | `[ ] Pendente` |
-| 3 | Fase 3 — Indicadores: P/VP, DY 12m, liquidez, spread vs SELIC | `[ ] Pendente` |
-| 4 | Fase 4 — CLI: screener (`screen`) e comparativo (`compare`) | `[ ] Pendente` |
-| 5 | Fase 5 — CLI: carteira (`portfolio add/show/report`) | `[ ] Pendente` |
-| 6 | Fase 6 — Automação: update agendado + alertas opcionais | `[ ] Pendente` |
+| 1.1 | Collector CVM: cadastro de FIIs (`cad_fi.csv`) | `[ ] Pendente` |
+| 1.2 | Collector CVM: informe mensal (`inf_mensal_fii`) | `[ ] Pendente` |
+| 1.3 | Collector CVM: informe diário (`inf_diario_fi`) | `[ ] Pendente` |
+| 1.4 | Collector B3: COTAHIST anual (preços históricos) | `[ ] Pendente` |
+| 1.5 | Collector BCB: SELIC, CDI, IPCA | `[ ] Pendente` |
+| 1.6 | Storage: schema SQLite + upserts idempotentes | `[ ] Pendente` |
+| 1.7 | CLI: comando `update` integrando todos os collectors | `[ ] Pendente` |
+
+### M2 — Análise
+| Etapa | Descrição | Status |
+|---|---|---|
+| 2.1 | Indicadores: P/VP, DY 12m, liquidez, spread vs SELIC | `[ ] Futuro` |
+| 2.2 | CLI: `screen` com filtros e score ponderado | `[ ] Futuro` |
+| 2.3 | CLI: `info TICKER` e `compare TICKER1 TICKER2` | `[ ] Futuro` |
+
+### M3 — Carteira
+| Etapa | Descrição | Status |
+|---|---|---|
+| 3.1 | Gestão de posições e movimentações | `[ ] Futuro` |
+| 3.2 | CLI: `portfolio add/show/report` | `[ ] Futuro` |
+| 3.3 | Automação: update agendado + alertas opcionais | `[ ] Futuro` |
+
+### M4 — Interface gráfica
+| Etapa | Descrição | Status |
+|---|---|---|
+| 4.x | Tecnologia e escopo a definir após M3 | `[ ] Futuro` |
 
 ---
 
