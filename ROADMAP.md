@@ -517,7 +517,7 @@ schedule          # Agendador simples em Python
 | Etapa | Descrição | Status |
 |---|---|---|
 | 1.1 | Collector CVM: cadastro de FIIs (`cad_fi.csv`) | `[x] Concluído` |
-| 1.2 | Collector CVM: informe mensal (`inf_mensal_fii`) | `[ ] Pendente` |
+| 1.2 | Collector CVM: informe mensal (`inf_mensal_fii`) | `[x] Concluído` |
 | 1.3 | Collector CVM: informe diário (`inf_diario_fi`) | `[ ] Pendente` |
 | 1.4 | Collector B3: COTAHIST anual (preços históricos) | `[ ] Pendente` |
 | 1.5 | Collector BCB: SELIC, CDI, IPCA | `[ ] Pendente` |

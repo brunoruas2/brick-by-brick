@@ -21,7 +21,7 @@ console = Console()
 
 # Fontes implementadas por etapa do M1
 # Adicionamos aqui à medida que cada collector for concluído
-_SOURCES_AVAILABLE = ["cadastro"]
+_SOURCES_AVAILABLE = ["cadastro", "inf-mensal"]
 
 
 @app.command()
@@ -40,8 +40,10 @@ def update(
     Rodar sem argumentos atualiza todas as fontes disponíveis.
     Idempotente: pode ser executado múltiplas vezes sem duplicar dados.
     """
-    from src.storage.database import init_db, upsert_fiis
-    from src.collectors import cvm_cadastro
+    from src.storage.database import (
+        init_db, upsert_fiis, upsert_inf_mensal, update_fiis_metadata,
+    )
+    from src.collectors import cvm_cadastro, cvm_inf_mensal
 
     console.print(
         Panel.fit("Brick by Brick -- Atualizacao de dados", style="bold blue")
@@ -68,8 +70,15 @@ def update(
         n = upsert_fiis(records)
         results.append(("Cadastro CVM", n))
 
-    # --- Etapas futuras (adicionadas aqui conforme implementação) ---
-    # if "inf-mensal" in targets:   ...  (etapa 1.2)
+    # --- Etapa 1.2: Informe Mensal (CVM) ---
+    if "inf-mensal" in targets:
+        inf_records, meta_records = cvm_inf_mensal.fetch()
+        n_inf = upsert_inf_mensal(inf_records)
+        n_meta = update_fiis_metadata(meta_records)
+        results.append(("Informe Mensal CVM", n_inf))
+        results.append(("  segmento/mandato atualizados", n_meta))
+
+    # --- Etapas futuras (adicionadas aqui conforme implementacao) ---
     # if "inf-diario" in targets:   ...  (etapa 1.3)
     # if "cotahist"   in targets:   ...  (etapa 1.4)
     # if "benchmarks" in targets:   ...  (etapa 1.5)

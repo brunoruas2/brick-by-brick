@@ -219,6 +219,22 @@ def upsert_inf_mensal(records: list[dict]) -> int:
     return len(records)
 
 
+def update_fiis_metadata(records: list[dict]) -> int:
+    """
+    Atualiza segmento e mandato na tabela fiis.
+    Nao sobrescreve outros campos (ticker, gestor, etc.).
+    """
+    sql = """
+        UPDATE fiis
+        SET segmento = :segmento,
+            mandato  = :mandato
+        WHERE cnpj = :cnpj
+    """
+    with connect() as conn:
+        conn.executemany(sql, records)
+    return len(records)
+
+
 def upsert_benchmarks(records: list[dict]) -> int:
     sql = """
         INSERT INTO benchmarks (data, selic_mes, cdi_mes, ipca_mes)
