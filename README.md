@@ -2,16 +2,16 @@
 
 <img src="logo.png" alt="Brickie — your FII analyst" width="340"/>
 
-# 🧱 Brick by Brick
+# Brick by Brick
 
 ### *"Tijolo por tijolo, construindo riqueza."*
 
-**A Python toolkit for analyzing and tracking Brazilian Real Estate Investment Funds (FIIs) — using only primary, public, and free data sources.**
+**A Python CLI for analyzing and tracking Brazilian Real Estate Investment Funds (FIIs) — using only primary, public, and free data sources.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-[![Data Sources](https://img.shields.io/badge/Data-CVM%20%7C%20B3%20%7C%20BCB%20%7C%20IBGE-orange?style=flat-square)](ROADMAP.md)
-[![Status](https://img.shields.io/badge/Status-In%20Development-yellow?style=flat-square)]()
+[![Data Sources](https://img.shields.io/badge/Data-CVM%20%7C%20B3%20%7C%20BCB-orange?style=flat-square)](ROADMAP.md)
+[![Status](https://img.shields.io/badge/M1%20M2%20M3-Complete-brightgreen?style=flat-square)]()
 
 🇧🇷 [Leia em Português](README.pt-br.md)
 
@@ -21,70 +21,82 @@
 
 ## What is Brick by Brick?
 
-**Brick by Brick** is a Python project for collecting, analyzing, and tracking Brazilian Real Estate Investment Funds (FIIs). The name is a pun on "Tijolo por Tijolo" — the Portuguese term for real-estate-backed FIIs — and reflects the philosophy of building a solid investment portfolio one brick (one FII) at a time.
+**Brick by Brick** is a Python CLI for collecting, analyzing, and tracking Brazilian Real Estate Investment Funds (FIIs). The name is a pun on "Tijolo por Tijolo" — the Portuguese term for real-estate-backed FIIs — and reflects the philosophy of building a solid investment portfolio one brick at a time.
 
-The project is built on a single principle: **no third-party scrapers, no paid APIs, no fragile dependencies**. Every data point comes directly from official government sources that are legally required to publish this information — and always will be.
+The project is built on a single principle: **no third-party scrapers, no paid APIs, no fragile dependencies**. Every data point comes directly from official government sources that are legally required to publish this information.
 
 ---
 
-## Meet Brickie 🧱
+## Meet Brickie
 
-<img src="logo.png" alt="Brickie — your FII analyst" width="260"/>
+<img src="logo.png" alt="Brickie — your FII analyst" width="220"/>
 
-**Brickie** is your no-nonsense FII analyst. He reads official CVM filings, crunches B3 price data, checks the BCB benchmark rates, and tells you which bricks are worth adding to your portfolio — and which ones have cracks.
+**Brickie** is your no-nonsense FII analyst. He reads CVM filings, crunches B3 price data, checks BCB benchmark rates, and tells you which bricks are worth adding to your portfolio — and which ones have cracks.
+
+---
+
+## How to Use
+
+See **[USAGE.md](USAGE.md)** for the full usage guide, including:
+
+- Installation and first run
+- Finding FIIs with the screener
+- Researching a FII with `info` and `compare`
+- Building and tracking your portfolio
+- Setting up automatic alerts and scheduled updates
+
+**Quick start:**
+
+```bash
+pip install -r requirements.txt
+
+# 1. Download all data (CVM + B3 + BCB) — ~5 min, ~200 MB
+python main.py update
+
+# 2. Screen FIIs
+python main.py screen --dy-min 9 --pvp-max 1.05
+
+# 3. Inspect a FII
+python main.py info HGLG11
+
+# 4. Register a purchase and track your portfolio
+python main.py portfolio add HGLG11 100 165.50 2024-06-15
+python main.py portfolio report
+```
 
 ---
 
 ## Why only primary sources?
 
-Sites like Fundamentus, Status Invest, and Funds Explorer are great products — but they are third-party businesses. They can change their HTML, add CAPTCHAs, block scrapers, go offline, or simply shut down. Our data pipeline would break with them.
+Sites like Fundamentus, Status Invest, and Funds Explorer are great products — but they are third-party businesses. They can change their HTML, add CAPTCHAs, block scrapers, go offline, or shut down. Our data pipeline would break with them.
 
 Everything we need is already publicly available from the official regulators:
 
 | Source | What we get | URL |
 |--------|-------------|-----|
-| **CVM** | FII registry, monthly reports (DY, P/VP, PL, composition), daily NAV | `dados.cvm.gov.br` |
-| **B3** | Historical market prices (COTAHIST) — all FIIs since 1986 | `bvmf.bmfbovespa.com.br` |
+| **CVM** | FII registry, monthly reports (DY, VPA, PL, composition) | `dados.cvm.gov.br` |
+| **B3** | Historical daily prices (COTAHIST) — all FIIs since 1986 | `bvmf.bmfbovespa.com.br` |
 | **BCB** | SELIC, CDI, IPCA time series (benchmark) | `api.bcb.gov.br` |
-| **IBGE** | IPCA monthly variation | `servicodados.ibge.gov.br` |
-| **FundosNet** | Management reports, AGO/AGE documents (PDF) | `fnet.bmfbovespa.com.br` |
 
-All of these are `requests.get()` calls — no authentication, no rate-limit tricks, no scraping.
+All of these are plain `requests.get()` calls — no authentication, no rate limiting, no scraping.
 
 ---
 
-## What indicators are collected
+## Indicators
 
 | Indicator | Source | Notes |
 |-----------|--------|-------|
-| Monthly DY | CVM Informe Mensal | Direct field `Percentual_Dividend_Yield_Mes` |
-| Effective monthly return | CVM Informe Mensal | Direct field `Percentual_Rentabilidade_Efetiva_Mes` |
-| Net Asset Value (NAV / VPA) | CVM Informe Mensal | Direct field `Valor_Patrimonial_Cotas` |
+| Monthly DY | CVM Informe Mensal | `Percentual_Dividend_Yield_Mes` |
+| NAV / VPA | CVM Informe Mensal | `Valor_Patrimonial_Cotas` |
 | Market price | B3 COTAHIST | `PREULT`, filter `CODBDI == "12"` |
-| **P/VP (calculated)** | B3 ÷ CVM | Market price / NAV — computed here, not fetched |
-| **12-month DY (calculated)** | CVM | Sum of 12 monthly DY fields |
-| Daily liquidity | B3 COTAHIST | `VOLTOT`, 30-day average |
-| Net equity (PL) | CVM Informe Diário | `VL_PATRIM_LIQ` |
-| Number of shareholders | CVM Informe Mensal | `Total_Numero_Cotistas` |
-| Admin & management fees | CVM Informe Mensal | `Percentual_Despesas_Taxa_Administracao` |
+| **P/VP** | B3 ÷ CVM | Market price / NAV — calculated, not fetched |
+| **DY 12m** | CVM | Sum of 12 monthly DY values |
+| **Spread vs SELIC** | CVM + BCB | DY 12m − SELIC accumulated 12m |
+| Liquidity (30d avg) | B3 COTAHIST | `VOLTOT` 30-day mean |
+| DY consistency | CVM | Std. dev. of monthly DY — lower is more stable |
+| Admin fee | CVM Informe Mensal | `Percentual_Despesas_Taxa_Administracao` |
 | Portfolio composition | CVM Informe Mensal | CRI, LCI, real estate by type |
-| SELIC / CDI / IPCA | BCB + IBGE | Benchmark for return comparison |
-
----
-
-## Project Roadmap
-
-The project is structured in 7 phases. See [ROADMAP.md](ROADMAP.md) for full details.
-
-```
-Phase 1 — Data collection (CVM + B3 + BCB)       [ ] Pending
-Phase 2 — Storage (SQLite + Parquet)              [ ] Pending
-Phase 3 — Indicator calculation                   [ ] Pending
-Phase 4 — Screener & ranking                      [ ] Pending
-Phase 5 — Portfolio management                    [ ] Pending
-Phase 6 — Dashboard & reports                     [ ] Pending
-Phase 7 — Automation & alerts                     [ ] Pending
-```
+| SELIC / CDI / IPCA | BCB SGS | Benchmark for return comparison |
 
 ---
 
@@ -94,82 +106,55 @@ Phase 7 — Automation & alerts                     [ ] Pending
 brick-by-brick/
 ├── src/
 │   ├── collectors/
-│   │   ├── cvm_cadastro.py       # FII registry — cad_fi.csv
-│   │   ├── cvm_inf_mensal.py     # Monthly reports — DY, PL, composition
-│   │   ├── cvm_inf_diario.py     # Daily NAV and equity
-│   │   ├── b3_cotahist.py        # Historical market prices
-│   │   ├── bcb_series.py         # SELIC, CDI, IPCA
-│   │   └── fundosnet.py          # Management report PDFs
+│   │   ├── cvm_cadastro.py      # FII registry — cad_fi.csv
+│   │   ├── cvm_inf_mensal.py    # Monthly reports — DY, VPA, PL, composition
+│   │   ├── b3_cotahist.py       # Historical market prices — COTAHIST
+│   │   └── bcb_series.py        # SELIC, CDI, IPCA — BCB API SGS
 │   ├── storage/
-│   │   └── database.py           # SQLite + Parquet
+│   │   └── database.py          # SQLite schema, upserts, migrations
 │   ├── analysis/
-│   │   ├── indicadores.py        # P/VP, DY 12m, spread vs SELIC
-│   │   ├── screener.py           # Filter and rank FIIs
-│   │   └── comparador.py         # Side-by-side FII comparison
-│   ├── portfolio/
-│   │   ├── carteira.py           # Position management
-│   │   └── relatorio_mensal.py   # Monthly portfolio report
-│   ├── reports/
-│   │   └── dashboard.py          # Plotly interactive dashboard
-│   └── alerts/
-│       └── monitor.py            # Telegram / email alerts
-├── data/                         # Local data (gitignored)
-├── notebooks/                    # Jupyter exploration
-├── config.yaml                   # Settings
-├── carteira.json                 # Your portfolio
-├── ROADMAP.md                    # Full project plan
-└── main.py                       # CLI entry point
+│   │   ├── indicadores.py       # P/VP, DY 12m, spread vs SELIC, consistency
+│   │   └── screener.py          # Filter and rank FIIs by weighted score
+│   └── portfolio/
+│       ├── carteira.py          # Position management and P&L
+│       ├── relatorio.py         # Monthly portfolio report
+│       └── alertas.py           # Alert checks and screener opportunities
+├── data/                        # Local data — gitignored
+│   └── brickbybrick.sqlite      # SQLite database
+├── main.py                      # CLI entry point (Typer)
+├── requirements.txt
+├── ROADMAP.md                   # Full development plan
+└── USAGE.md                     # Usage guide and command reference
 ```
 
 ---
 
 ## Stack
 
-```python
-# Data collection — primary sources only
-requests          # HTTP: CVM, B3, BCB, IBGE, FundosNet
-zipfile + io      # In-memory ZIP extraction
-
-# Processing
-pandas            # DataFrames and CSV reading
-numpy             # Numerical calculations
-
-# Storage
-sqlite3           # Local relational database
-pyarrow           # Parquet for long time series
-
-# Visualization
-plotly            # Interactive dashboard
-
-# Reports
-jinja2            # HTML templates
-
-# Alerts
-python-telegram-bot  # Telegram notifications
-smtplib           # Email (stdlib)
-
-# Scheduling
-schedule          # Lightweight job scheduler
 ```
+requests      # HTTP — CVM, B3, BCB
+pandas        # DataFrames and CSV parsing
+numpy         # Numerical calculations
+sqlite3       # Local relational database (stdlib)
+typer         # CLI framework
+rich          # Terminal tables and colors
+schedule      # Lightweight job scheduler
+```
+
+> No Plotly, no Jupyter, no Parquet, no Jinja2. Everything runs in the terminal.
 
 ---
 
-## Getting Started
+## Roadmap
 
-> Setup instructions will be added when Phase 1 is complete.
+| Milestone | Scope | Status |
+|-----------|-------|--------|
+| **M1 — Foundation** | Data collection (CVM + B3 + BCB) + SQLite storage | ✅ Complete |
+| **M2 — Analysis** | Indicators, screener, `info`, `compare` | ✅ Complete |
+| **M3 — Portfolio** | Position management, P&L, monthly report, alerts, scheduler | ✅ Complete |
+| **M4 — Interface** | GUI (web, desktop or dashboard) — scope TBD | ⬜ Future |
 
-```bash
-git clone https://github.com/brunoruas2/brick-by-brick.git
-cd brick-by-brick
-pip install -r requirements.txt
-python main.py
-```
-
----
-
-## Contributing
-
-This project is in early development. The roadmap is public and contributions are welcome once the core pipeline is stable. Open an issue to discuss ideas.
+See [ROADMAP.md](ROADMAP.md) for full details.
 
 ---
 
@@ -183,6 +168,6 @@ MIT — see [LICENSE](LICENSE) for details.
 
 *"O mercado pode ser irracional por mais tempo do que você pode permanecer solvente — então analise os tijolos antes de comprar."*
 
-**🧱 Brick by Brick — build wealth, one FII at a time.**
+**Brick by Brick — build wealth, one FII at a time.**
 
 </div>

@@ -6,10 +6,10 @@
 |---|---|---|
 | **M1 — Fundação** | Coleta de dados primários + storage SQLite | `[x] Concluído` |
 | **M2 — Análise** | Cálculo de indicadores, benchmarks e comparativos | `[x] Concluído` |
-| **M3 — Carteira** | Gestão de posições, P&L, relatório mensal em texto | `[ ] Futuro` |
+| **M3 — Carteira** | Gestão de posições, P&L, relatório mensal em texto | `[x] Concluído` |
 | **M4 — Interface** | GUI (web, desktop ou dashboard) — escopo a definir | `[ ] Futuro` |
 
-> **Foco atual: M3.** M1 (coleta de dados) e M2 (analise e screener) estao concluidos. Proximo passo: gestao de carteira, P&L e relatorio mensal.
+> **M1, M2 e M3 concluidos (incluindo automacao e alertas).** Proximo passo: M4 (interface grafica — escopo a definir).
 
 ---
 
@@ -534,9 +534,9 @@ schedule          # Agendador simples em Python
 ### M3 — Carteira
 | Etapa | Descrição | Status |
 |---|---|---|
-| 3.1 | Gestão de posições e movimentações | `[ ] Futuro` |
-| 3.2 | CLI: `portfolio add/show/report` | `[ ] Futuro` |
-| 3.3 | Automação: update agendado + alertas opcionais | `[ ] Futuro` |
+| 3.1 | Gestão de posições e movimentações | `[x] Concluido` |
+| 3.2 | CLI: `portfolio add/sell/show/report/history` | `[x] Concluido` |
+| 3.3 | Automacao: update agendado (`scheduler`) + alertas (`alerts`) | `[x] Concluido` |
 
 ### M4 — Interface gráfica
 | Etapa | Descrição | Status |

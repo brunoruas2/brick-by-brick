@@ -29,6 +29,8 @@ app = typer.Typer(
     help="Brick by Brick -- Analise de Fundos Imobiliarios",
     add_completion=False,
 )
+portfolio_app = typer.Typer(help="Gestao da carteira de FIIs")
+app.add_typer(portfolio_app, name="portfolio")
 console = Console()
 
 _SOURCES_AVAILABLE = ["cadastro", "inf-mensal", "cotahist", "benchmarks"]
@@ -47,6 +49,47 @@ def _fmt_reais(v) -> str:
     return f"R$ {v:.0f}"
 
 
+def _execute_update(targets: list[str]) -> list[tuple[str, int]]:
+    """
+    Executa a atualizacao das fontes indicadas e retorna (label, count) por fonte.
+    Chamado tanto pelo comando 'update' quanto pelo scheduler.
+    """
+    from src.storage.database import (
+        init_db, upsert_fiis, upsert_inf_mensal, update_fiis_metadata,
+        upsert_cotacoes, upsert_benchmarks, update_fiis_isin,
+        upsert_isin_ticker, link_tickers,
+    )
+    from src.collectors import cvm_cadastro, cvm_inf_mensal
+
+    init_db()
+    results: list[tuple[str, int]] = []
+
+    if "cadastro" in targets:
+        records = cvm_cadastro.fetch()
+        results.append(("Cadastro CVM", upsert_fiis(records)))
+
+    if "inf-mensal" in targets:
+        inf_records, meta_records = cvm_inf_mensal.fetch()
+        results.append(("Informe Mensal CVM", upsert_inf_mensal(inf_records)))
+        results.append(("  segmento/mandato", update_fiis_metadata(meta_records)))
+        update_fiis_isin(meta_records)
+
+    if "cotahist" in targets:
+        from src.collectors import b3_cotahist
+        cotacao_records, isin_ticker_records = b3_cotahist.fetch()
+        results.append(("COTAHIST B3", upsert_cotacoes(cotacao_records)))
+        upsert_isin_ticker(isin_ticker_records)
+
+    if "benchmarks" in targets:
+        from src.collectors import bcb_series
+        results.append(("Benchmarks BCB (24m)", upsert_benchmarks(bcb_series.fetch(months=24))))
+
+    n_linked = link_tickers()
+    results.append(("  tickers vinculados a CNPJs", n_linked))
+
+    return results
+
+
 @app.command()
 def update(
     source: str = typer.Argument(
@@ -59,15 +102,7 @@ def update(
 
     Sem argumentos atualiza todas as fontes. Idempotente.
     """
-    from src.storage.database import (
-        init_db, upsert_fiis, upsert_inf_mensal, update_fiis_metadata,
-        upsert_cotacoes, upsert_benchmarks, update_fiis_isin,
-        upsert_isin_ticker, link_tickers,
-    )
-    from src.collectors import cvm_cadastro, cvm_inf_mensal
-
     console.print(Panel.fit("Brick by Brick -- Atualizacao de dados", style="bold blue"))
-    init_db()
     console.print("[dim]  Banco:[/dim] data/brickbybrick.sqlite\n")
 
     targets = _SOURCES_AVAILABLE if source == "all" else [source]
@@ -80,35 +115,7 @@ def update(
             )
             raise typer.Exit(code=1)
 
-    results: list[tuple[str, int]] = []
-
-    # 1.1 Cadastro de FIIs (CVM)
-    if "cadastro" in targets:
-        records = cvm_cadastro.fetch()
-        results.append(("Cadastro CVM", upsert_fiis(records)))
-
-    # 1.2 Informe Mensal (CVM)
-    if "inf-mensal" in targets:
-        inf_records, meta_records = cvm_inf_mensal.fetch()
-        results.append(("Informe Mensal CVM", upsert_inf_mensal(inf_records)))
-        results.append(("  segmento/mandato", update_fiis_metadata(meta_records)))
-        update_fiis_isin(meta_records)
-
-    # 1.4 Cotacoes historicas B3 (COTAHIST)
-    if "cotahist" in targets:
-        from src.collectors import b3_cotahist
-        cotacao_records, isin_ticker_records = b3_cotahist.fetch()
-        results.append(("COTAHIST B3", upsert_cotacoes(cotacao_records)))
-        upsert_isin_ticker(isin_ticker_records)
-
-    # 1.5 Benchmarks BCB
-    if "benchmarks" in targets:
-        from src.collectors import bcb_series
-        results.append(("Benchmarks BCB (24m)", upsert_benchmarks(bcb_series.fetch(months=24))))
-
-    # Vincula tickers a CNPJs via ISIN
-    n_linked = link_tickers()
-    results.append(("  tickers vinculados a CNPJs", n_linked))
+    results = _execute_update(targets)
 
     console.print()
     table = Table(show_header=True, header_style="bold")
@@ -292,6 +299,234 @@ def status():
         table.add_row(t, str(count))
 
     conn.close()
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Alertas
+# ---------------------------------------------------------------------------
+
+@app.command()
+def alerts(
+    pvp_max:      float = typer.Option(1.20,  "--pvp-max",   help="Limiar de P/VP para aviso"),
+    pl_min:       float = typer.Option(-15.0, "--pl-min",    help="Limiar de P&L%% para atencao"),
+    dy_queda:     float = typer.Option(0.80,  "--dy-queda",  help="Fracao da media 12m para alerta de DY"),
+    score_min:    float = typer.Option(70.0,  "--score-min", help="Score minimo para sugerir oportunidade"),
+):
+    """Verifica alertas da carteira e oportunidades do screener."""
+    from src.portfolio.alertas import check_alerts
+
+    lista = check_alerts(
+        pvp_max=pvp_max,
+        pl_pct_min=pl_min,
+        dy_queda_pct=dy_queda,
+        score_min=score_min,
+    )
+
+    if not lista:
+        console.print("[green]Sem alertas. Carteira dentro dos parametros configurados.[/green]")
+        return
+
+    _ESTILOS = {
+        "atencao":     ("red",    "[ATENCAO]"),
+        "aviso":       ("yellow", "[AVISO]  "),
+        "oportunidade":("green",  "[OPRTND] "),
+    }
+
+    table = Table(show_header=True, header_style="bold", title="Alertas e oportunidades")
+    table.add_column("Nivel",  width=10)
+    table.add_column("Ticker", style="cyan", width=8)
+    table.add_column("Tipo",   width=16)
+    table.add_column("Detalhe")
+
+    for a in lista:
+        cor, label = _ESTILOS.get(a.nivel, ("white", a.nivel))
+        table.add_row(
+            f"[{cor}]{label}[/{cor}]",
+            a.ticker,
+            a.tipo,
+            a.mensagem,
+        )
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Scheduler
+# ---------------------------------------------------------------------------
+
+@app.command()
+def scheduler():
+    """
+    Inicia o agendador de atualizacoes automaticas (processo em foreground).
+
+    Agenda padrao:
+      Dias uteis 20:30  -- cotahist (precos diarios)
+      Domingo    21:00  -- cadastro + inf-mensal (dados mensais CVM)
+      Dia 1      07:00  -- benchmarks (SELIC/CDI/IPCA BCB)
+
+    Pressione Ctrl+C para encerrar.
+    """
+    try:
+        import schedule
+    except ImportError:
+        console.print("[red]Dependencia ausente. Instale com: pip install schedule[/red]")
+        raise typer.Exit(code=1)
+
+    import time
+    from datetime import datetime
+
+    def _ts() -> str:
+        return datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    def _job(sources: list[str], label: str) -> None:
+        console.print(f"\n[dim]{_ts()}[/dim] [cyan]Iniciando:[/cyan] {label}")
+        try:
+            results = _execute_update(sources)
+            for lbl, cnt in results:
+                console.print(f"  [dim]{lbl}:[/dim] {cnt}")
+            console.print(f"[dim]{_ts()}[/dim] [green]Concluido:[/green] {label}")
+        except Exception as e:
+            console.print(f"[dim]{_ts()}[/dim] [red]Erro em '{label}': {e}[/red]")
+
+        # Verifica alertas apos cada atualizacao
+        try:
+            from src.portfolio.alertas import check_alerts
+            lista = check_alerts()
+            urgentes = [a for a in lista if a.nivel == "atencao"]
+            if urgentes:
+                console.print(f"[red]  {len(urgentes)} alerta(s) de atencao -- rode: python main.py alerts[/red]")
+        except Exception:
+            pass
+
+    def _job_benchmarks() -> None:
+        """Roda apenas no dia 1 de cada mes."""
+        if datetime.now().day == 1:
+            _job(["benchmarks"], "benchmarks BCB")
+        # Se nao for dia 1, silencio (o schedule chama todo dia no horario)
+
+    # Agenda
+    schedule.every().monday.at("20:30").do(_job, ["cotahist"], "cotahist (precos diarios)")
+    schedule.every().tuesday.at("20:30").do(_job, ["cotahist"], "cotahist (precos diarios)")
+    schedule.every().wednesday.at("20:30").do(_job, ["cotahist"], "cotahist (precos diarios)")
+    schedule.every().thursday.at("20:30").do(_job, ["cotahist"], "cotahist (precos diarios)")
+    schedule.every().friday.at("20:30").do(_job, ["cotahist"], "cotahist (precos diarios)")
+    schedule.every().sunday.at("21:00").do(_job, ["cadastro", "inf-mensal"], "cadastro + inf-mensal CVM")
+    schedule.every().day.at("07:00").do(_job_benchmarks)
+
+    # Exibe agenda ao iniciar
+    console.print(Panel.fit("Brick by Brick -- Scheduler", style="bold blue"))
+    t = Table(show_header=True, header_style="bold", title="Agenda configurada")
+    t.add_column("Horario",  width=20)
+    t.add_column("Tarefa")
+    t.add_row("Seg-Sex 20:30", "update cotahist  (precos diarios B3)")
+    t.add_row("Dom    21:00", "update cadastro + inf-mensal  (CVM)")
+    t.add_row("Dia 1  07:00", "update benchmarks  (SELIC/CDI/IPCA BCB)")
+    console.print(t)
+    console.print("[dim]Pressione Ctrl+C para encerrar.[/dim]\n")
+
+    try:
+        while True:
+            schedule.run_pending()
+            time.sleep(30)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Scheduler encerrado pelo usuario.[/yellow]")
+
+
+# ---------------------------------------------------------------------------
+# Carteira
+# ---------------------------------------------------------------------------
+
+@portfolio_app.command("add")
+def portfolio_add(
+    ticker: str  = typer.Argument(..., help="Ticker do FII (ex: HGLG11)"),
+    cotas:  int  = typer.Argument(..., help="Numero de cotas compradas"),
+    preco:  float = typer.Argument(..., help="Preco unitario pago (R$)"),
+    data:   str  = typer.Argument(..., help="Data da operacao (YYYY-MM-DD)"),
+):
+    """Registra uma compra na carteira."""
+    from src.portfolio.carteira import add_compra
+    try:
+        add_compra(ticker, cotas, preco, data)
+        console.print(
+            f"[green]Compra registrada:[/green] "
+            f"{cotas}x {ticker.upper()} @ R$ {preco:.2f}  em {data}"
+        )
+    except Exception as e:
+        console.print(f"[red]Erro: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@portfolio_app.command("sell")
+def portfolio_sell(
+    ticker: str  = typer.Argument(..., help="Ticker do FII (ex: HGLG11)"),
+    cotas:  int  = typer.Argument(..., help="Numero de cotas vendidas"),
+    preco:  float = typer.Argument(..., help="Preco unitario recebido (R$)"),
+    data:   str  = typer.Argument(..., help="Data da operacao (YYYY-MM-DD)"),
+):
+    """Registra uma venda na carteira."""
+    from src.portfolio.carteira import add_venda
+    try:
+        add_venda(ticker, cotas, preco, data)
+        console.print(
+            f"[green]Venda registrada:[/green] "
+            f"{cotas}x {ticker.upper()} @ R$ {preco:.2f}  em {data}"
+        )
+    except ValueError as e:
+        console.print(f"[red]Erro: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@portfolio_app.command("show")
+def portfolio_show():
+    """Exibe as posicoes ativas com preco atual e P&L de capital."""
+    from src.portfolio.relatorio import show_posicoes
+    show_posicoes()
+
+
+@portfolio_app.command("report")
+def portfolio_report(
+    month: str = typer.Option(
+        None, "--month", "-m",
+        help="Mes do relatorio (YYYY-MM). Padrao: mes atual.",
+    ),
+):
+    """Relatorio mensal: posicoes, proventos estimados, YoC e benchmarks."""
+    from src.portfolio.relatorio import relatorio_mensal
+    relatorio_mensal(month)
+
+
+@portfolio_app.command("history")
+def portfolio_history(
+    ticker: str = typer.Argument(None, help="Ticker para filtrar (opcional)"),
+):
+    """Exibe o historico de movimentacoes."""
+    import pandas as pd
+    from src.portfolio.carteira import get_movimentacoes
+
+    df = get_movimentacoes(ticker)
+    if df.empty:
+        console.print("[yellow]Sem movimentacoes registradas.[/yellow]")
+        return
+
+    table = Table(show_header=True, header_style="bold", title="Historico de movimentacoes")
+    table.add_column("Data",    width=12)
+    table.add_column("Ticker",  style="cyan", width=8)
+    table.add_column("Tipo",    width=8)
+    table.add_column("Cotas",   justify="right", width=7)
+    table.add_column("Preco",   justify="right", width=10)
+    table.add_column("Total",   justify="right", width=13)
+
+    for _, r in df.iterrows():
+        table.add_row(
+            str(r["data"]),
+            str(r["ticker"]),
+            str(r["tipo"]),
+            str(int(r["quantidade"])) if pd.notna(r.get("quantidade")) else "--",
+            f"R$ {r['preco_unitario']:.2f}" if pd.notna(r.get("preco_unitario")) else "--",
+            f"R$ {r['valor_total']:.2f}",
+        )
+
     console.print(table)
 
 
