@@ -318,7 +318,7 @@ def get_historico_dividendos(
                 cotas_acc = max(0, cotas_acc - q)
             eventos.append((mv["data"], cotas_acc, pm_acc))
 
-        splits = fatores.get(t, [])  # [(YYYY-MM, fator), ...] ordem cronologica
+        splits = fatores.get(t, [])  # [(YYYY-MM, fator, tipo), ...] ordem cronologica
 
         for mes in pd.period_range(inicio, ultimo_mes, freq="M"):
             fim = mes.to_timestamp("M")
@@ -332,18 +332,27 @@ def get_historico_dividendos(
             if cotas_mes <= 0:
                 continue
 
-            # Aplica fator de grupamento: para meses anteriores ao evento,
-            # as cotas atuais representam mais cotas antigas (multiplicar pelo fator)
-            cotas_corrigidas = cotas_mes
-            for split_mes, split_fator in splits:
-                if str(mes) < split_mes:
-                    cotas_corrigidas = cotas_corrigidas * split_fator
+            # Corrige cotas e preco_medio para refletir eventos de split:
+            #   grupamento (reverse split N:1): N cotas antigas -> 1 nova
+            #     meses ANTES do evento: multiplica cotas por N, divide pm por N
+            #   desdobramento (forward split 1:N): 1 cota antiga -> N novas
+            #     meses APOS o evento: multiplica cotas por N, divide pm por N
+            # Em ambos os casos custo_total = cotas_corrigidas * pm_corrigido permanece igual.
+            cotas_corrigidas = float(cotas_mes)
+            pm_corrigido = float(pm_mes)
+            for split_mes, split_fator, split_tipo in splits:
+                if split_tipo == "grupamento" and str(mes) < split_mes:
+                    cotas_corrigidas *= split_fator
+                    pm_corrigido /= split_fator
+                elif split_tipo == "desdobramento" and str(mes) >= split_mes:
+                    cotas_corrigidas *= split_fator
+                    pm_corrigido /= split_fator
 
             registros.append({
                 "mes":         str(mes),
                 "ticker":      t,
                 "cotas":       cotas_corrigidas,
-                "preco_medio": round(pm_mes, 4),
+                "preco_medio": round(pm_corrigido, 4),
             })
 
     if not registros:

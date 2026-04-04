@@ -163,20 +163,25 @@ def detectar_anomalias(
 
 def add_grupamento(
     ticker: str,
-    mes: str,           # YYYY-MM
+    mes: str,
     fator: float,
+    tipo: str = "grupamento",
     observacao: str | None = None,
 ) -> None:
     """
-    Registra um grupamento de cotas confirmado manualmente.
+    Registra um grupamento ou desdobramento de cotas confirmado manualmente.
 
     ticker:     ex. 'HGLG11'
-    mes:        ex. '2021-10'  (mes em que o grupamento foi efetivado)
-    fator:      ex. 10.0       (10 cotas antigas viraram 1 nova)
+    mes:        ex. '2021-10'  (mes em que o evento foi efetivado)
+    fator:      ex. 10.0
+    tipo:       'grupamento'   -- N cotas antigas viraram 1 nova (reverse split)
+                'desdobramento' -- 1 cota virou N novas (forward split)
     observacao: texto livre (opcional)
 
     Raises ValueError se o ticker nao for encontrado no banco.
     """
+    if tipo not in ("grupamento", "desdobramento"):
+        raise ValueError("tipo deve ser 'grupamento' ou 'desdobramento'")
     ticker = ticker.upper()
 
     with connect() as conn:
@@ -198,6 +203,7 @@ def add_grupamento(
         "ticker":          ticker,
         "data_grupamento": data_grupamento,
         "fator":           float(fator),
+        "tipo":            tipo,
         "origem":          "manual",
         "observacao":      observacao,
         "criado_em":       _dt.datetime.now().isoformat(timespec="seconds"),
@@ -208,20 +214,22 @@ def add_grupamento(
 # Lookup de fatores para correcao historica
 # ---------------------------------------------------------------------------
 
-def get_fatores_por_ticker(tickers: list[str]) -> dict[str, list[tuple[str, float]]]:
+def get_fatores_por_ticker(tickers: list[str]) -> dict[str, list[tuple[str, float, str]]]:
     """
-    Retorna dict: ticker -> [(data_grupamento_YYYY-MM, fator), ...] ordenado por data.
+    Retorna dict: ticker -> [(YYYY-MM, fator, tipo), ...] ordenado por data.
 
-    Apenas grupamentos confirmados (origem='manual').
+    tipo: 'grupamento' (reverse split) | 'desdobramento' (forward split)
+    Apenas eventos confirmados (origem='manual').
     Usado em get_historico_dividendos() para corrigir cotas historicas.
     """
     rows = get_grupamentos(tickers)
-    result: dict[str, list[tuple[str, float]]] = {}
+    result: dict[str, list[tuple[str, float, str]]] = {}
     for r in rows:
         t = r["ticker"]
         mes = r["data_grupamento"][:7]   # YYYY-MM
         fator = float(r["fator"])
-        result.setdefault(t, []).append((mes, fator))
+        tipo = r.get("tipo", "grupamento")
+        result.setdefault(t, []).append((mes, fator, tipo))
     # Garante ordem cronologica por ticker
     for t in result:
         result[t].sort(key=lambda x: x[0])

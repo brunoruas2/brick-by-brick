@@ -587,19 +587,26 @@ def portfolio_dividends(
 
 @portfolio_app.command("add-split")
 def portfolio_add_split(
-    ticker: str  = typer.Argument(..., help="Ticker do FII (ex: HGLG11)"),
-    mes:    str  = typer.Argument(..., help="Mes do grupamento (YYYY-MM)"),
-    fator:  float = typer.Argument(..., help="Fator do grupamento (ex: 10 = 10 cotas antigas viraram 1)"),
-    obs:    str  = typer.Option(None, "--obs", help="Observacao opcional (ex: 'Fato relevante 15/10/2021')"),
+    ticker: str   = typer.Argument(..., help="Ticker do FII (ex: HGLG11)"),
+    mes:    str   = typer.Argument(..., help="Mes do evento (YYYY-MM)"),
+    fator:  float = typer.Argument(..., help="Fator (ex: 10)"),
+    tipo:   str   = typer.Option("grupamento", "--tipo", help="grupamento (reverse split) ou desdobramento (forward split)"),
+    obs:    str   = typer.Option(None, "--obs", help="Observacao opcional"),
 ):
-    """Registra um grupamento de cotas confirmado para correcao do historico de dividendos."""
+    """Registra grupamento ou desdobramento de cotas para correcao do historico."""
     from src.portfolio.grupamentos import add_grupamento
     try:
-        add_grupamento(ticker, mes, fator, observacao=obs)
-        console.print(
-            f"[green]Grupamento registrado:[/green] "
-            f"{ticker.upper()} em {mes}, fator {fator:.0f}:1"
-        )
+        add_grupamento(ticker, mes, fator, tipo=tipo, observacao=obs)
+        if tipo == "desdobramento":
+            console.print(
+                f"[green]Desdobramento registrado:[/green] "
+                f"{ticker.upper()} em {mes}, fator 1:{fator:.0f}"
+            )
+        else:
+            console.print(
+                f"[green]Grupamento registrado:[/green] "
+                f"{ticker.upper()} em {mes}, fator {fator:.0f}:1"
+            )
         console.print(
             "[dim]Rode 'portfolio dividends' para ver o historico corrigido.[/dim]"
         )

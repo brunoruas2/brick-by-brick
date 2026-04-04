@@ -141,8 +141,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.commit()
     except Exception:
         pass  # coluna ja existe
-    # grupamentos: criada pelo _SCHEMA acima em bancos novos;
-    # bancos antigos precisam do CREATE via executescript — ja coberto pelo init_db
+    # Adiciona coluna tipo na tabela grupamentos (bancos criados antes desta versao)
+    try:
+        conn.execute(
+            "ALTER TABLE grupamentos ADD COLUMN tipo TEXT NOT NULL DEFAULT 'grupamento'"
+        )
+        conn.commit()
+    except Exception:
+        pass  # coluna ja existe
 
 
 def init_db() -> None:
@@ -324,15 +330,20 @@ def upsert_isin_ticker(records: list[dict]) -> int:
 
 def upsert_grupamento(record: dict) -> None:
     """
-    Insere ou atualiza um grupamento de cotas confirmado.
+    Insere ou atualiza um grupamento ou desdobramento de cotas.
 
-    Chaves esperadas: cnpj, ticker, data_grupamento, fator, origem, observacao, criado_em
+    Chaves esperadas:
+      cnpj, ticker, data_grupamento, fator, tipo, origem, observacao, criado_em
+    tipo: 'grupamento' (reverse split) | 'desdobramento' (forward split)
     """
     sql = """
-        INSERT INTO grupamentos (cnpj, ticker, data_grupamento, fator, origem, observacao, criado_em)
-        VALUES (:cnpj, :ticker, :data_grupamento, :fator, :origem, :observacao, :criado_em)
+        INSERT INTO grupamentos
+            (cnpj, ticker, data_grupamento, fator, tipo, origem, observacao, criado_em)
+        VALUES
+            (:cnpj, :ticker, :data_grupamento, :fator, :tipo, :origem, :observacao, :criado_em)
         ON CONFLICT(cnpj, data_grupamento) DO UPDATE SET
             fator      = excluded.fator,
+            tipo       = excluded.tipo,
             ticker     = excluded.ticker,
             origem     = excluded.origem,
             observacao = excluded.observacao,
@@ -343,13 +354,15 @@ def upsert_grupamento(record: dict) -> None:
 
 
 def get_grupamentos(tickers: list[str]) -> list[dict]:
-    """Retorna grupamentos registrados para os tickers indicados, ordenados por data."""
+    """Retorna grupamentos/desdobramentos registrados para os tickers, ordenados por data."""
     if not tickers:
         return []
     ph = ",".join("?" * len(tickers))
     with connect() as conn:
         rows = conn.execute(
-            f"""SELECT g.cnpj, g.ticker, g.data_grupamento, g.fator, g.origem, g.observacao
+            f"""SELECT g.cnpj, g.ticker, g.data_grupamento, g.fator,
+                       COALESCE(g.tipo, 'grupamento') AS tipo,
+                       g.origem, g.observacao
                 FROM grupamentos g
                 WHERE g.ticker IN ({ph})
                 ORDER BY g.ticker, g.data_grupamento""",
