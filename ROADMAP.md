@@ -516,13 +516,13 @@ schedule          # Agendador simples em Python
 ### M1 — Fundação (foco atual)
 | Etapa | Descrição | Status |
 |---|---|---|
-| 1.1 | Collector CVM: cadastro de FIIs (`cad_fi.csv`) | `[ ] Pendente` |
+| 1.1 | Collector CVM: cadastro de FIIs (`cad_fi.csv`) | `[x] Concluído` |
 | 1.2 | Collector CVM: informe mensal (`inf_mensal_fii`) | `[ ] Pendente` |
 | 1.3 | Collector CVM: informe diário (`inf_diario_fi`) | `[ ] Pendente` |
 | 1.4 | Collector B3: COTAHIST anual (preços históricos) | `[ ] Pendente` |
 | 1.5 | Collector BCB: SELIC, CDI, IPCA | `[ ] Pendente` |
-| 1.6 | Storage: schema SQLite + upserts idempotentes | `[ ] Pendente` |
-| 1.7 | CLI: comando `update` integrando todos os collectors | `[ ] Pendente` |
+| 1.6 | Storage: schema SQLite + upserts idempotentes | `[x] Concluído` |
+| 1.7 | CLI: comando `update` integrando todos os collectors | `[x] Concluído` (parcial — expande a cada collector) |
 
 ### M2 — Análise
 | Etapa | Descrição | Status |
