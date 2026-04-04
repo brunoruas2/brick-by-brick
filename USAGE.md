@@ -213,13 +213,17 @@ python main.py portfolio history HGLG11
 
 | Indicador | O que representa |
 |---|---|
-| Div/cota | Dividendo por cota do mês = (DY% × preço de fechamento do mês) |
+| P. Cota | Preço de fechamento do último pregão do mês (B3) |
+| DY mês | Dividend yield mensal reportado pela CVM para aquele mês |
+| Div/cota | Dividendo estimado por cota = DY% × preço de fechamento |
 | Recebido | Cotas detidas no mês × dividendo/cota |
 | YoC mês | Dividendo recebido / custo total × 100 |
-| YoC acum. | Total recebido / custo total × 100 |
+| YoC acum. | Total recebido / custo total × 100 (sumário por ativo) |
 | Payback | Percentual do custo de aquisição recuperado em dividendos |
 
 > A posição mensal é reconstruída a partir do histórico de compras e vendas — o relatório reflete exatamente quantas cotas você detinha em cada mês, ao preço médio vigente naquele momento.
+
+> **Nota sobre grupamentos de cotas:** se um fundo realizou grupamento (consolidação de cotas) durante o período, os meses anteriores ao evento mostrarão dividendos por cota menores, pois o CVM reporta o valor na unidade vigente à época. Isso é uma limitação de dados — sem um histórico de eventos corporativos não é possível normalizar os valores históricos automaticamente.
 
 ---
 

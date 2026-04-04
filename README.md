@@ -93,8 +93,9 @@ All of these are plain `requests.get()` calls — no authentication, no rate lim
 | NAV / VPA | CVM Informe Mensal | `Valor_Patrimonial_Cotas` |
 | Market price | B3 COTAHIST | `PREULT`, filter `CODBDI == "12"` |
 | **P/VP** | B3 ÷ CVM | Market price / NAV — calculated, not fetched |
-| **DY 12m** | CVM | Sum of 12 monthly DY values |
+| **DY 12m** | CVM | Sum of 12 monthly DY values (stored as decimal fraction, e.g. 0.0066 = 0.66%) |
 | **Spread vs SELIC** | CVM + BCB | DY 12m − SELIC accumulated 12m |
+| **Dividend history** | CVM + B3 | Monthly dividend per unit = DY × closing price; reconstructed from trade history |
 | Liquidity (30d avg) | B3 COTAHIST | `VOLTOT` 30-day mean |
 | DY consistency | CVM | Std. dev. of monthly DY — lower is more stable |
 | Admin fee | CVM Informe Mensal | `Percentual_Despesas_Taxa_Administracao` |
