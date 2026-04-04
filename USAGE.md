@@ -93,6 +93,8 @@ Indicadores exibidos: preço de mercado, VPA, P/VP, DY do mês, DY 12m, liquidez
 
 ### 4. Montar a carteira
 
+#### Opção A — entrada manual (uma operação por vez)
+
 ```bash
 # Registrar uma compra: TICKER COTAS PRECO DATA
 python main.py portfolio add HGLG11 100 165.50 2024-06-15
@@ -104,6 +106,62 @@ python main.py portfolio add HGLG11  50 158.00 2026-01-10
 
 # Registrar uma venda
 python main.py portfolio sell MXRF11 100 10.20 2026-04-01
+```
+
+#### Opção B — importação em lote via Excel
+
+Ideal para quem já tem um histórico de operações ou prefere editar uma planilha.
+
+**Passo 1 — gerar o template:**
+
+```bash
+python main.py portfolio template
+# → cria carteira_template.xlsx no diretório atual
+
+# Caminho personalizado:
+python main.py portfolio template --output minha_carteira.xlsx
+```
+
+O arquivo gerado contém:
+- Cabeçalho formatado com as colunas obrigatórias
+- Linhas de exemplo com fundo azul claro
+- Lista suspensa na coluna `tipo` (compra / venda)
+- Aba `instrucoes` com a descrição de cada campo
+
+**Colunas do template:**
+
+| Coluna | Formato | Exemplo |
+|--------|---------|---------|
+| `ticker` | Texto maiúsculo | `HGLG11` |
+| `tipo` | `compra` ou `venda` | `compra` |
+| `data` | YYYY-MM-DD | `2024-06-15` |
+| `cotas` | Inteiro positivo | `100` |
+| `preco` | Preço por cota (R$) | `165.50` |
+
+**Passo 2 — preencher e validar:**
+
+```bash
+# Valida o arquivo sem salvar nada no banco
+python main.py portfolio import carteira_template.xlsx --dry-run
+```
+
+Saída esperada:
+```
+Modo dry-run: nenhuma alteracao sera salva.
+4 operacao(oes) validadas com sucesso.
+```
+
+**Passo 3 — importar:**
+
+```bash
+python main.py portfolio import carteira_template.xlsx
+```
+
+Linhas com erro são reportadas individualmente sem interromper as demais:
+```
+3 operacao(oes) importadas com sucesso.
+1 linha(s) com erro:
+  • Linha 5 (XXXX11): Posicao ativa nao encontrada para XXXX11
 ```
 
 ---
@@ -227,11 +285,13 @@ python main.py screen [filtros]            # Screener com score ponderado
 python main.py info TICKER                 # Indicadores detalhados de um FII
 python main.py compare TICKER [TICKER...]  # Comparação lado a lado
 
-python main.py portfolio add   TICKER COTAS PRECO DATA   # Registra compra
-python main.py portfolio sell  TICKER COTAS PRECO DATA   # Registra venda
-python main.py portfolio show                            # Posições com P&L
-python main.py portfolio report [--month YYYY-MM]        # Relatório mensal
-python main.py portfolio history [TICKER]                # Histórico de operações
+python main.py portfolio add      TICKER COTAS PRECO DATA   # Registra compra
+python main.py portfolio sell     TICKER COTAS PRECO DATA   # Registra venda
+python main.py portfolio template [--output ARQUIVO]        # Gera template Excel
+python main.py portfolio import   ARQUIVO [--dry-run]       # Importa do Excel
+python main.py portfolio show                               # Posições com P&L
+python main.py portfolio report   [--month YYYY-MM]         # Relatório mensal
+python main.py portfolio history  [TICKER]                  # Histórico de operações
 
 python main.py alerts [opções]             # Alertas e oportunidades
 python main.py scheduler                   # Agendador automático (foreground)

@@ -59,8 +59,10 @@ python main.py screen --dy-min 9 --pvp-max 1.05
 # 3. Pesquisa um FII
 python main.py info HGLG11
 
-# 4. Registra uma compra e acompanha a carteira
+# 4. Monte sua carteira — manualmente ou via importação Excel
 python main.py portfolio add HGLG11 100 165.50 2024-06-15
+python main.py portfolio template              # gera carteira_template.xlsx
+python main.py portfolio import carteira.xlsx  # importa em lote do Excel
 python main.py portfolio report
 ```
 
@@ -139,6 +141,7 @@ sqlite3       # Banco relacional local (stdlib)
 typer         # Framework de CLI
 rich          # Tabelas e cores no terminal
 schedule      # Agendador de tarefas
+openpyxl      # Geração e leitura de templates Excel
 ```
 
 > Sem Plotly, sem Jupyter, sem Parquet, sem Jinja2. Tudo roda no terminal.

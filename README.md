@@ -59,8 +59,10 @@ python main.py screen --dy-min 9 --pvp-max 1.05
 # 3. Inspect a FII
 python main.py info HGLG11
 
-# 4. Register a purchase and track your portfolio
+# 4. Build your portfolio — manually or via Excel import
 python main.py portfolio add HGLG11 100 165.50 2024-06-15
+python main.py portfolio template          # generate carteira_template.xlsx
+python main.py portfolio import carteira.xlsx  # bulk import from Excel
 python main.py portfolio report
 ```
 
@@ -139,6 +141,7 @@ sqlite3       # Local relational database (stdlib)
 typer         # CLI framework
 rich          # Terminal tables and colors
 schedule      # Lightweight job scheduler
+openpyxl      # Excel template generation and import
 ```
 
 > No Plotly, no Jupyter, no Parquet, no Jinja2. Everything runs in the terminal.
