@@ -116,7 +116,7 @@ def get_posicoes(month: str | None = None) -> pd.DataFrame:
       nome, segmento,
       preco_atual, valor_atual,
       pl_capital, pl_pct,
-      dy_mes, vpa, provento_est (cotas * vpa * dy_mes / 100)
+      dy_mes, vpa, provento_est (cotas * vpa * dy_mes)
     """
     if month:
         cot_filter = "strftime('%Y-%m', data) <= ?"
@@ -146,7 +146,7 @@ def get_posicoes(month: str | None = None) -> pd.DataFrame:
                      ELSE NULL END                         AS pl_pct,
                 im.dy_mes,
                 im.valor_patrimonial_cota                  AS vpa,
-                ROUND(c.cotas * im.valor_patrimonial_cota * im.dy_mes / 100, 2) AS provento_est
+                ROUND(c.cotas * im.valor_patrimonial_cota * im.dy_mes, 2) AS provento_est
             FROM carteira c
             LEFT JOIN fiis f ON c.ticker = f.ticker
             LEFT JOIN (
@@ -189,7 +189,8 @@ def get_historico_dividendos(
 
     Logica:
       - Posicao mensal: reconstrói cotas e preco_medio a partir das movimentacoes
-      - dividendo_cota  = (dy_mes / 100) * preco_fechamento_do_mes
+      - dividendo_cota  = dy_mes * preco_fechamento_do_mes
+        (dy_mes ja esta em fracao decimal: 0.00661 = 0,66%)
         (fallback: VPA quando nao ha cotacao de mercado para aquele mes)
       - dividendo_recebido = cotas * dividendo_cota
       - yoc_mes = dividendo_recebido / custo_total * 100
@@ -353,7 +354,7 @@ def get_historico_dividendos(
     preco_ref = df["preco_cota"].fillna(df.get("vpa"))
 
     df["custo_total"]         = (df["cotas"] * df["preco_medio"]).round(2)
-    df["dividendo_cota"]      = (df["dy_mes"] / 100.0 * preco_ref).round(6)
+    df["dividendo_cota"]      = (df["dy_mes"] * preco_ref).round(4)
     df["dividendo_recebido"]  = (df["cotas"] * df["dividendo_cota"]).round(2)
     df["yoc_mes"]             = (df["dividendo_recebido"] / df["custo_total"] * 100).round(4)
 

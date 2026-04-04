@@ -237,17 +237,33 @@ def upsert_inf_mensal(records: list[dict]) -> int:
 
 def update_fiis_metadata(records: list[dict]) -> int:
     """
-    Atualiza segmento e mandato na tabela fiis.
-    Nao sobrescreve outros campos (ticker, gestor, etc.).
+    Garante que todos os CNPJs do inf_mensal existam em fiis, depois atualiza
+    segmento, mandato e isin. FIIs ausentes do cadastro (nao retornados pela
+    cvm_cadastro) sao criados com dados minimos para que os joins funcionem.
     """
-    sql = """
-        UPDATE fiis
-        SET segmento = :segmento,
-            mandato  = :mandato
-        WHERE cnpj = :cnpj
-    """
+    import datetime as _dt
+    now = _dt.datetime.now().isoformat(timespec="seconds")
+
     with connect() as conn:
-        conn.executemany(sql, records)
+        # Garante registro minimo para CNPJs ainda nao presentes
+        conn.executemany(
+            """
+            INSERT OR IGNORE INTO fiis (cnpj, nome, atualizado_em)
+            VALUES (:cnpj, '[inf_mensal]', :now)
+            """,
+            [{**r, "now": now} for r in records],
+        )
+        # Atualiza segmento, mandato e isin (nao sobrescreve nome real se ja existir)
+        conn.executemany(
+            """
+            UPDATE fiis
+            SET segmento = :segmento,
+                mandato  = :mandato,
+                isin     = COALESCE(NULLIF(:isin,''), isin)
+            WHERE cnpj = :cnpj
+            """,
+            records,
+        )
     return len(records)
 
 
@@ -295,10 +311,12 @@ def upsert_isin_ticker(records: list[dict]) -> int:
 def link_tickers() -> int:
     """
     Vincula tickers aos CNPJs atraves da tabela isin_ticker.
-    Atualiza fiis.ticker usando fiis.isin como ponte.
+    1. Atualiza fiis.ticker usando fiis.isin como ponte (isin_ticker).
+    2. Backfill de carteira.cnpj para posicoes com cnpj NULL.
     Retorna contagem de FIIs com ticker vinculado.
     """
     with connect() as conn:
+        # 1. Popula fiis.ticker via isin
         conn.execute("""
             UPDATE fiis
             SET ticker = (
@@ -306,6 +324,15 @@ def link_tickers() -> int:
                 WHERE isin_ticker.isin = fiis.isin
             )
             WHERE isin IS NOT NULL
+        """)
+        # 2. Backfill carteira.cnpj onde esta NULL
+        conn.execute("""
+            UPDATE carteira
+            SET cnpj = (
+                SELECT cnpj FROM fiis
+                WHERE fiis.ticker = carteira.ticker
+            )
+            WHERE cnpj IS NULL
         """)
         row = conn.execute(
             "SELECT COUNT(*) FROM fiis WHERE ticker IS NOT NULL"

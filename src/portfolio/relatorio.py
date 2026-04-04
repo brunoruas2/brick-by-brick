@@ -307,15 +307,15 @@ def relatorio_dividendos(
             dt = Table(show_header=True, header_style="bold")
             dt.add_column("Mes",       width=8)
             dt.add_column("Cotas",     justify="right", width=7)
-            dt.add_column("P. Cota",   justify="right", width=9)
+            dt.add_column("P. Cota",   justify="right", width=11)
             dt.add_column("DY mes",    justify="right", width=8)
-            dt.add_column("Div/cota",  justify="right", width=9)
+            dt.add_column("Div/cota",  justify="right", width=11)
             dt.add_column("Recebido",  justify="right", width=12)
             dt.add_column("YoC mes",   justify="right", width=8)
 
             for _, r in sub.iterrows():
                 preco_str = f"R$ {r['preco_cota']:.2f}" if pd.notna(r.get("preco_cota")) else "--"
-                dy_str    = f"{r['dy_mes']:.2f}%"        if pd.notna(r.get("dy_mes"))    else "--"
+                dy_str    = f"{r['dy_mes']*100:.2f}%"    if pd.notna(r.get("dy_mes"))    else "--"
                 dcota_str = f"R$ {r['dividendo_cota']:.4f}" if pd.notna(r.get("dividendo_cota")) else "--"
                 rec_str   = f"R$ {r['dividendo_recebido']:.2f}" if pd.notna(r.get("dividendo_recebido")) else "--"
                 yoc_str   = f"{r['yoc_mes']:.4f}%"      if pd.notna(r.get("yoc_mes"))   else "--"
