@@ -119,6 +119,18 @@ CREATE TABLE IF NOT EXISTS movimentacoes (
     preco_unitario REAL,
     valor_total    REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS grupamentos (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    cnpj            TEXT NOT NULL,
+    ticker          TEXT,
+    data_grupamento TEXT NOT NULL,   -- ISO-8601, primeiro dia do mes (YYYY-MM-01)
+    fator           REAL NOT NULL,   -- ex: 10.0 significa 10 cotas antigas = 1 nova
+    origem          TEXT NOT NULL,   -- 'manual' | 'auto'
+    observacao      TEXT,
+    criado_em       TEXT NOT NULL,
+    UNIQUE(cnpj, data_grupamento)
+);
 """
 
 
@@ -129,6 +141,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.commit()
     except Exception:
         pass  # coluna ja existe
+    # grupamentos: criada pelo _SCHEMA acima em bancos novos;
+    # bancos antigos precisam do CREATE via executescript — ja coberto pelo init_db
 
 
 def init_db() -> None:
@@ -306,6 +320,42 @@ def upsert_isin_ticker(records: list[dict]) -> int:
     with connect() as conn:
         conn.executemany(sql, valid)
     return len(valid)
+
+
+def upsert_grupamento(record: dict) -> None:
+    """
+    Insere ou atualiza um grupamento de cotas confirmado.
+
+    Chaves esperadas: cnpj, ticker, data_grupamento, fator, origem, observacao, criado_em
+    """
+    sql = """
+        INSERT INTO grupamentos (cnpj, ticker, data_grupamento, fator, origem, observacao, criado_em)
+        VALUES (:cnpj, :ticker, :data_grupamento, :fator, :origem, :observacao, :criado_em)
+        ON CONFLICT(cnpj, data_grupamento) DO UPDATE SET
+            fator      = excluded.fator,
+            ticker     = excluded.ticker,
+            origem     = excluded.origem,
+            observacao = excluded.observacao,
+            criado_em  = excluded.criado_em
+    """
+    with connect() as conn:
+        conn.execute(sql, record)
+
+
+def get_grupamentos(tickers: list[str]) -> list[dict]:
+    """Retorna grupamentos registrados para os tickers indicados, ordenados por data."""
+    if not tickers:
+        return []
+    ph = ",".join("?" * len(tickers))
+    with connect() as conn:
+        rows = conn.execute(
+            f"""SELECT g.cnpj, g.ticker, g.data_grupamento, g.fator, g.origem, g.observacao
+                FROM grupamentos g
+                WHERE g.ticker IN ({ph})
+                ORDER BY g.ticker, g.data_grupamento""",
+            tickers,
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def link_tickers() -> int:

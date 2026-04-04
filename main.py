@@ -585,6 +585,76 @@ def portfolio_dividends(
     relatorio_dividendos(ticker=ticker, desde=desde, resumo=resumo)
 
 
+@portfolio_app.command("add-split")
+def portfolio_add_split(
+    ticker: str  = typer.Argument(..., help="Ticker do FII (ex: HGLG11)"),
+    mes:    str  = typer.Argument(..., help="Mes do grupamento (YYYY-MM)"),
+    fator:  float = typer.Argument(..., help="Fator do grupamento (ex: 10 = 10 cotas antigas viraram 1)"),
+    obs:    str  = typer.Option(None, "--obs", help="Observacao opcional (ex: 'Fato relevante 15/10/2021')"),
+):
+    """Registra um grupamento de cotas confirmado para correcao do historico de dividendos."""
+    from src.portfolio.grupamentos import add_grupamento
+    try:
+        add_grupamento(ticker, mes, fator, observacao=obs)
+        console.print(
+            f"[green]Grupamento registrado:[/green] "
+            f"{ticker.upper()} em {mes}, fator {fator:.0f}:1"
+        )
+        console.print(
+            "[dim]Rode 'portfolio dividends' para ver o historico corrigido.[/dim]"
+        )
+    except ValueError as e:
+        console.print(f"[red]Erro: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@portfolio_app.command("check-splits")
+def portfolio_check_splits(
+    ticker: str = typer.Argument(None, help="Ticker para restringir a busca (opcional)"),
+):
+    """Varre o historico de cotas emitidas e aponta possiveis grupamentos nao registrados."""
+    from src.portfolio.grupamentos import detectar_anomalias
+    from src.portfolio.carteira import get_posicoes
+
+    tickers_arg = [ticker.upper()] if ticker else None
+
+    # Se nenhum ticker passado, usa os tickers da carteira ativa
+    if not tickers_arg:
+        pos = get_posicoes()
+        if pos.empty:
+            console.print("[yellow]Carteira vazia. Passe um ticker como argumento.[/yellow]")
+            raise typer.Exit()
+        tickers_arg = pos["ticker"].tolist()
+
+    anomalias = detectar_anomalias(tickers=tickers_arg)
+
+    if not anomalias:
+        console.print("[green]Nenhuma anomalia detectada para os tickers analisados.[/green]")
+        return
+
+    t = Table(show_header=True, header_style="bold", title="Possiveis grupamentos detectados")
+    t.add_column("Ticker",     style="cyan", width=8)
+    t.add_column("Mes",        width=8)
+    t.add_column("Fator est.", justify="right", width=10)
+    t.add_column("Confianca",  width=8)
+    t.add_column("Sinais")
+
+    for a in anomalias:
+        cor = "green" if a["confianca"] == "alta" else "yellow" if a["confianca"] == "media" else "dim"
+        t.add_row(
+            a["ticker"],
+            a["mes"],
+            f"{a['fator_estimado']}:1",
+            f"[{cor}]{a['confianca']}[/{cor}]",
+            a["sinais"],
+        )
+
+    console.print(t)
+    console.print()
+    console.print("[dim]Pesquise o fato relevante do fundo no mes indicado e, se confirmar,[/dim]")
+    console.print("[dim]registre com: python main.py portfolio add-split TICKER YYYY-MM FATOR[/dim]")
+
+
 @portfolio_app.command("history")
 def portfolio_history(
     ticker: str = typer.Argument(None, help="Ticker para filtrar (opcional)"),

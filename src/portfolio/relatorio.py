@@ -296,6 +296,34 @@ def relatorio_dividendos(
 
     tickers = df["ticker"].unique().tolist()
 
+    # Anomalias de grupamento para os tickers da carteira
+    from src.portfolio.grupamentos import detectar_anomalias
+    anomalias = detectar_anomalias(tickers=tickers)
+    if anomalias:
+        console.print()
+        console.print("[bold yellow]Possiveis grupamentos detectados:[/bold yellow]")
+        at = Table(show_header=True, header_style="yellow")
+        at.add_column("Ticker",    style="cyan", width=8)
+        at.add_column("Mes",       width=8)
+        at.add_column("Fator est.", justify="right", width=10)
+        at.add_column("Confianca", width=8)
+        at.add_column("Sinais")
+        for a in anomalias:
+            cor = "green" if a["confianca"] == "alta" else "yellow" if a["confianca"] == "media" else "dim"
+            at.add_row(
+                a["ticker"],
+                a["mes"],
+                f"{a['fator_estimado']}:1",
+                f"[{cor}]{a['confianca']}[/{cor}]",
+                a["sinais"],
+            )
+        console.print(at)
+        console.print(
+            "[dim]Para registrar um grupamento confirmado: "
+            "python main.py portfolio add-split TICKER YYYY-MM FATOR[/dim]"
+        )
+        console.print()
+
     # ------------------------------------------------------------------
     # Detalhe mensal por ativo (omitido em modo resumo)
     # ------------------------------------------------------------------

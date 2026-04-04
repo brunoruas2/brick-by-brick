@@ -285,6 +285,10 @@ def get_historico_dividendos(
     # Meses ja fechados (exclui mes corrente, cujo DY ainda nao esta completo)
     ultimo_mes = (hoje.to_period("M") - 1)
 
+    # Fatores de grupamento confirmados para correcao historica
+    from src.portfolio.grupamentos import get_fatores_por_ticker
+    fatores = get_fatores_por_ticker(tickers_list)
+
     registros: list[dict] = []
 
     for t in tickers_list:
@@ -314,6 +318,8 @@ def get_historico_dividendos(
                 cotas_acc = max(0, cotas_acc - q)
             eventos.append((mv["data"], cotas_acc, pm_acc))
 
+        splits = fatores.get(t, [])  # [(YYYY-MM, fator), ...] ordem cronologica
+
         for mes in pd.period_range(inicio, ultimo_mes, freq="M"):
             fim = mes.to_timestamp("M")
             cotas_mes, pm_mes = 0, 0.0
@@ -326,10 +332,17 @@ def get_historico_dividendos(
             if cotas_mes <= 0:
                 continue
 
+            # Aplica fator de grupamento: para meses anteriores ao evento,
+            # as cotas atuais representam mais cotas antigas (multiplicar pelo fator)
+            cotas_corrigidas = cotas_mes
+            for split_mes, split_fator in splits:
+                if str(mes) < split_mes:
+                    cotas_corrigidas = cotas_corrigidas * split_fator
+
             registros.append({
                 "mes":         str(mes),
                 "ticker":      t,
-                "cotas":       cotas_mes,
+                "cotas":       cotas_corrigidas,
                 "preco_medio": round(pm_mes, 4),
             })
 
