@@ -68,12 +68,17 @@ _FIELDS = {
 # Parsing
 # ---------------------------------------------------------------------------
 
-def _parse_lines(lines: list[bytes]) -> list[dict]:
+def _parse_lines(lines: list[bytes]) -> tuple[list[dict], list[dict]]:
     """
     Parseia as linhas do arquivo COTAHIST e retorna registros de FIIs.
     Apenas linhas com tipreg=='01' e codbdi=='12' (FII) sao processadas.
+
+    Returns:
+        (cotacoes_records, isin_ticker_records)
     """
     records = []
+    isin_ticker_records: dict[str, str] = {}  # isin -> ticker (deduplica)
+
     for line in lines:
         if len(line) < 245:
             continue
@@ -108,6 +113,10 @@ def _parse_lines(lines: list[bytes]) -> list[dict]:
         if not ticker:
             continue
 
+        isin = line[230:242].decode("latin-1").strip()
+        if isin:
+            isin_ticker_records[isin] = ticker
+
         records.append({
             "ticker":    ticker,
             "data":      data,
@@ -119,15 +128,18 @@ def _parse_lines(lines: list[bytes]) -> list[dict]:
             "negocios":  integer(147, 152),
         })
 
-    return records
+    isin_ticker_list = [{"isin": k, "ticker": v} for k, v in isin_ticker_records.items()]
+    return records, isin_ticker_list
 
 
 # ---------------------------------------------------------------------------
 # Download
 # ---------------------------------------------------------------------------
 
-def _download_year(year: int) -> list[dict]:
-    """Baixa COTAHIST_{year}.ZIP e retorna registros de cotacoes de FIIs."""
+def _download_year(year: int) -> tuple[list[dict], list[dict]]:
+    """
+    Baixa COTAHIST_{year}.ZIP e retorna (cotacoes, isin_ticker) de FIIs.
+    """
     url = _BASE_URL.format(year=year)
     console.print(f"[cyan]  -> B3 -- COTAHIST {year}[/cyan]")
 
@@ -135,31 +147,31 @@ def _download_year(year: int) -> list[dict]:
         r = requests.get(url, timeout=300, stream=True)
         if r.status_code == 404:
             console.print(f"[dim]    {year} nao disponivel[/dim]")
-            return []
+            return [], []
         r.raise_for_status()
     except requests.RequestException as e:
         console.print(f"[red]    Erro {year}: {e}[/red]")
-        return []
+        return [], []
 
     content = r.content
     with zipfile.ZipFile(io.BytesIO(content)) as zf:
         txt_names = [n for n in zf.namelist() if n.upper().endswith(".TXT")]
         if not txt_names:
             console.print("[red]    Arquivo TXT nao encontrado no ZIP[/red]")
-            return []
+            return [], []
         raw = zf.read(txt_names[0])
 
     lines = raw.split(b"\n")
-    records = _parse_lines(lines)
-    console.print(f"[dim]    {len(records)} cotacoes de FIIs[/dim]")
-    return records
+    records, isin_ticker = _parse_lines(lines)
+    console.print(f"[dim]    {len(records)} cotacoes de FIIs | {len(isin_ticker)} ISINs mapeados[/dim]")
+    return records, isin_ticker
 
 
 # ---------------------------------------------------------------------------
 # Ponto de entrada
 # ---------------------------------------------------------------------------
 
-def fetch(years: list[int] | None = None) -> list[dict]:
+def fetch(years: list[int] | None = None) -> tuple[list[dict], list[dict]]:
     """
     Baixa o COTAHIST da B3 para os anos indicados.
 
@@ -167,15 +179,17 @@ def fetch(years: list[int] | None = None) -> list[dict]:
         years: lista de anos. Padrao: ano atual + ano anterior.
 
     Returns:
-        lista de dicts para upsert_cotacoes().
+        (cotacoes_records, isin_ticker_records)
     """
     if years is None:
         today = date.today()
         years = sorted({today.year - 1, today.year})
 
-    all_records: list[dict] = []
+    all_cotacoes: list[dict] = []
+    all_isin_ticker: list[dict] = []
     for year in years:
-        records = _download_year(year)
-        all_records.extend(records)
+        cotacoes, isin_ticker = _download_year(year)
+        all_cotacoes.extend(cotacoes)
+        all_isin_ticker.extend(isin_ticker)
 
-    return all_records
+    return all_cotacoes, all_isin_ticker

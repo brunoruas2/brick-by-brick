@@ -36,6 +36,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS fiis (
     cnpj          TEXT PRIMARY KEY,   -- 14 dígitos sem formatação
     ticker        TEXT,               -- preenchido pelo collector B3 (etapa 1.4)
+    isin          TEXT,               -- preenchido pelo informe mensal (ISIN do fundo)
     nome          TEXT NOT NULL,
     situacao      TEXT,               -- ex: "EM FUNCIONAMENTO NORMAL"
     segmento      TEXT,               -- preenchido pelo informe mensal (etapa 1.2)
@@ -45,6 +46,11 @@ CREATE TABLE IF NOT EXISTS fiis (
     taxa_adm      REAL,
     data_inicio   TEXT,               -- ISO-8601
     atualizado_em TEXT NOT NULL       -- ISO-8601 timestamp da última ingestão
+);
+
+CREATE TABLE IF NOT EXISTS isin_ticker (
+    isin   TEXT PRIMARY KEY,
+    ticker TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS cotacoes (
@@ -116,10 +122,20 @@ CREATE TABLE IF NOT EXISTS movimentacoes (
 """
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Aplica migracoes incrementais ao schema existente."""
+    try:
+        conn.execute("ALTER TABLE fiis ADD COLUMN isin TEXT")
+        conn.commit()
+    except Exception:
+        pass  # coluna ja existe
+
+
 def init_db() -> None:
     """Cria todas as tabelas se não existirem. Seguro para rodar múltiplas vezes."""
     with connect() as conn:
         conn.executescript(_SCHEMA)
+        _migrate(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -247,3 +263,51 @@ def upsert_benchmarks(records: list[dict]) -> int:
     with connect() as conn:
         conn.executemany(sql, records)
     return len(records)
+
+
+def update_fiis_isin(records: list[dict]) -> int:
+    """
+    Atualiza o campo isin na tabela fiis.
+    Recebe dicts com chaves: cnpj, isin (e possivelmente outros campos ignorados).
+    """
+    sql = "UPDATE fiis SET isin = :isin WHERE cnpj = :cnpj"
+    valid = [r for r in records if r.get("isin")]
+    with connect() as conn:
+        conn.executemany(sql, valid)
+    return len(valid)
+
+
+def upsert_isin_ticker(records: list[dict]) -> int:
+    """
+    Insere ou atualiza mapeamento ISIN -> ticker na tabela isin_ticker.
+    """
+    sql = """
+        INSERT INTO isin_ticker (isin, ticker)
+        VALUES (:isin, :ticker)
+        ON CONFLICT(isin) DO UPDATE SET ticker = excluded.ticker
+    """
+    valid = [r for r in records if r.get("isin") and r.get("ticker")]
+    with connect() as conn:
+        conn.executemany(sql, valid)
+    return len(valid)
+
+
+def link_tickers() -> int:
+    """
+    Vincula tickers aos CNPJs atraves da tabela isin_ticker.
+    Atualiza fiis.ticker usando fiis.isin como ponte.
+    Retorna contagem de FIIs com ticker vinculado.
+    """
+    with connect() as conn:
+        conn.execute("""
+            UPDATE fiis
+            SET ticker = (
+                SELECT ticker FROM isin_ticker
+                WHERE isin_ticker.isin = fiis.isin
+            )
+            WHERE isin IS NOT NULL
+        """)
+        row = conn.execute(
+            "SELECT COUNT(*) FROM fiis WHERE ticker IS NOT NULL"
+        ).fetchone()
+    return row[0] if row else 0

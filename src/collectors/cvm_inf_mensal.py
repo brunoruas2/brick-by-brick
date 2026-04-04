@@ -200,7 +200,7 @@ def _build_inf_mensal(
 
 def _build_fii_updates(geral: pd.DataFrame) -> list[dict]:
     """
-    Extrai segmento e mandato do _geral_ para atualizar a tabela fiis.
+    Extrai segmento, mandato e ISIN do _geral_ para atualizar a tabela fiis.
     Retorna apenas o registro mais recente por CNPJ.
     """
     if geral.empty:
@@ -223,6 +223,7 @@ def _build_fii_updates(geral: pd.DataFrame) -> list[dict]:
         "mandato":  g["Mandato"].fillna("").str.strip()
                     if "Mandato" in g.columns
                     else pd.Series("", index=g.index),
+        "isin":     _col(g, "Codigo_ISIN").str.strip(),
     })
 
     out = out[out["cnpj"].str.len() == 14]

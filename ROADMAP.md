@@ -5,11 +5,11 @@
 | Milestone | Escopo | Status |
 |---|---|---|
 | **M1 — Fundação** | Coleta de dados primários + storage SQLite | `[x] Concluído` |
-| **M2 — Análise** | Cálculo de indicadores, benchmarks e comparativos | `[ ] Futuro` |
+| **M2 — Análise** | Cálculo de indicadores, benchmarks e comparativos | `[x] Concluído` |
 | **M3 — Carteira** | Gestão de posições, P&L, relatório mensal em texto | `[ ] Futuro` |
 | **M4 — Interface** | GUI (web, desktop ou dashboard) — escopo a definir | `[ ] Futuro` |
 
-> **Foco atual: M1.** Sem dados limpos e confiáveis no banco, nenhuma análise tem valor. Só avançamos para M2 quando a ingestão estiver estável e testada.
+> **Foco atual: M3.** M1 (coleta de dados) e M2 (analise e screener) estao concluidos. Proximo passo: gestao de carteira, P&L e relatorio mensal.
 
 ---
 
@@ -527,9 +527,9 @@ schedule          # Agendador simples em Python
 ### M2 — Análise
 | Etapa | Descrição | Status |
 |---|---|---|
-| 2.1 | Indicadores: P/VP, DY 12m, liquidez, spread vs SELIC | `[ ] Futuro` |
-| 2.2 | CLI: `screen` com filtros e score ponderado | `[ ] Futuro` |
-| 2.3 | CLI: `info TICKER` e `compare TICKER1 TICKER2` | `[ ] Futuro` |
+| 2.1 | Indicadores: P/VP, DY 12m, liquidez, spread vs SELIC | `[x] Concluido` |
+| 2.2 | CLI: `screen` com filtros e score ponderado | `[x] Concluido` |
+| 2.3 | CLI: `info TICKER` e `compare TICKER1 TICKER2` | `[x] Concluido` |
 
 ### M3 — Carteira
 | Etapa | Descrição | Status |
