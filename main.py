@@ -1,26 +1,32 @@
 """
-🧱 Brick by Brick — CLI principal
+Brick by Brick -- CLI principal
 
 Uso:
-    python main.py update                  # atualiza todas as fontes disponíveis
+    python main.py update                  # atualiza todas as fontes
     python main.py update cadastro         # apenas o cadastro de FIIs (CVM)
+    python main.py update inf-mensal       # apenas informe mensal (CVM)
+    python main.py update cotahist         # apenas cotacoes historicas (B3)
+    python main.py update benchmarks       # apenas SELIC/CDI/IPCA (BCB)
+    python main.py status                  # estado do banco local
     python main.py --help
 """
 
+import os
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+# Força UTF-8 no Windows para evitar UnicodeEncodeError com rich/typer
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
 app = typer.Typer(
     name="brick",
-    help="🧱 Brick by Brick — Análise de Fundos Imobiliários",
+    help="Brick by Brick -- Analise de Fundos Imobiliarios",
     add_completion=False,
 )
 console = Console()
 
-# Fontes implementadas por etapa do M1
-# Adicionamos aqui à medida que cada collector for concluído
 _SOURCES_AVAILABLE = ["cadastro", "inf-mensal", "cotahist", "benchmarks"]
 
 
@@ -28,17 +34,13 @@ _SOURCES_AVAILABLE = ["cadastro", "inf-mensal", "cotahist", "benchmarks"]
 def update(
     source: str = typer.Argument(
         "all",
-        help=(
-            "Fonte a atualizar: "
-            + " | ".join(["all"] + _SOURCES_AVAILABLE)
-        ),
+        help="Fonte: all | cadastro | inf-mensal | cotahist | benchmarks",
     ),
 ):
     """
-    Baixa dados das fontes primárias (CVM, B3, BCB) e salva no banco local.
+    Baixa dados das fontes primarias (CVM, B3, BCB) e salva no banco local.
 
-    Rodar sem argumentos atualiza todas as fontes disponíveis.
-    Idempotente: pode ser executado múltiplas vezes sem duplicar dados.
+    Sem argumentos atualiza todas as fontes. Idempotente.
     """
     from src.storage.database import (
         init_db, upsert_fiis, upsert_inf_mensal, update_fiis_metadata,
@@ -46,10 +48,7 @@ def update(
     )
     from src.collectors import cvm_cadastro, cvm_inf_mensal
 
-    console.print(
-        Panel.fit("Brick by Brick -- Atualizacao de dados", style="bold blue")
-    )
-
+    console.print(Panel.fit("Brick by Brick -- Atualizacao de dados", style="bold blue"))
     init_db()
     console.print("[dim]  Banco:[/dim] data/brickbybrick.sqlite\n")
 
@@ -59,44 +58,37 @@ def update(
         if t not in _SOURCES_AVAILABLE:
             console.print(
                 f"[red]Fonte desconhecida: '{t}'. "
-                f"Disponíveis: {', '.join(_SOURCES_AVAILABLE)}[/red]"
+                f"Disponiveis: {', '.join(_SOURCES_AVAILABLE)}[/red]"
             )
             raise typer.Exit(code=1)
 
     results: list[tuple[str, int]] = []
 
-    # --- Etapa 1.1: Cadastro de FIIs (CVM) ---
+    # 1.1 Cadastro de FIIs (CVM)
     if "cadastro" in targets:
         records = cvm_cadastro.fetch()
-        n = upsert_fiis(records)
-        results.append(("Cadastro CVM", n))
+        results.append(("Cadastro CVM", upsert_fiis(records)))
 
-    # --- Etapa 1.2: Informe Mensal (CVM) ---
+    # 1.2 Informe Mensal (CVM)
     if "inf-mensal" in targets:
         inf_records, meta_records = cvm_inf_mensal.fetch()
-        n_inf = upsert_inf_mensal(inf_records)
-        n_meta = update_fiis_metadata(meta_records)
-        results.append(("Informe Mensal CVM", n_inf))
-        results.append(("  segmento/mandato atualizados", n_meta))
+        results.append(("Informe Mensal CVM", upsert_inf_mensal(inf_records)))
+        results.append(("  segmento/mandato", update_fiis_metadata(meta_records)))
 
-    # --- Etapa 1.4: Cotacoes historicas B3 (COTAHIST) ---
+    # 1.4 Cotacoes historicas B3 (COTAHIST)
     if "cotahist" in targets:
         from src.collectors import b3_cotahist
-        cotacao_records = b3_cotahist.fetch()
-        n_cot = upsert_cotacoes(cotacao_records)
-        results.append(("COTAHIST B3", n_cot))
+        results.append(("COTAHIST B3", upsert_cotacoes(b3_cotahist.fetch())))
 
-    # --- Etapa 1.5: Benchmarks BCB (SELIC, CDI, IPCA) ---
+    # 1.5 Benchmarks BCB
     if "benchmarks" in targets:
         from src.collectors import bcb_series
-        bench_records = bcb_series.fetch(months=24)
-        n_bench = upsert_benchmarks(bench_records)
-        results.append(("Benchmarks BCB (24 meses)", n_bench))
+        results.append(("Benchmarks BCB (24m)", upsert_benchmarks(bcb_series.fetch(months=24))))
 
     console.print()
     table = Table(show_header=True, header_style="bold")
     table.add_column("Fonte", style="cyan")
-    table.add_column("Registros salvos", justify="right", style="green")
+    table.add_column("Registros", justify="right", style="green")
     for label, count in results:
         table.add_row(label, str(count))
     console.print(table)
@@ -109,7 +101,7 @@ def status():
     from src.config import DB_PATH
 
     if not DB_PATH.exists():
-        console.print("[yellow]Banco não encontrado. Rode: python main.py update[/yellow]")
+        console.print("[yellow]Banco nao encontrado. Rode: python main.py update[/yellow]")
         raise typer.Exit()
 
     conn = sqlite3.connect(DB_PATH)
@@ -117,15 +109,12 @@ def status():
     table.add_column("Tabela", style="cyan")
     table.add_column("Registros", justify="right")
 
-    tables = [
-        "fiis", "cotacoes", "cota_oficial",
-        "inf_mensal", "benchmarks", "carteira", "movimentacoes",
-    ]
-    for t in tables:
+    for t in ["fiis", "cotacoes", "cota_oficial", "inf_mensal", "benchmarks",
+              "carteira", "movimentacoes"]:
         try:
             (count,) = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()
         except Exception:
-            count = "—"
+            count = "?"
         table.add_row(t, str(count))
 
     conn.close()
