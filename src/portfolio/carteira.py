@@ -252,7 +252,9 @@ def get_historico_dividendos(
                 f"""SELECT f.ticker,
                            strftime('%Y-%m', im.data_referencia) AS mes,
                            im.dy_mes,
-                           im.valor_patrimonial_cota AS vpa
+                           im.valor_patrimonial_cota AS vpa,
+                           im.rendimentos_a_distribuir,
+                           im.cotas_emitidas AS cotas_emitidas_fundo
                     FROM inf_mensal im
                     JOIN fiis f ON f.cnpj = im.cnpj
                     WHERE im.cnpj IN ({ph_c}) AND im.dy_mes IS NOT NULL""",
@@ -371,6 +373,23 @@ def get_historico_dividendos(
     else:
         df["dy_mes"] = None
         df["vpa"] = None
+
+    # Corrige dy_mes para o mes exato do evento de split:
+    # A CVM pode usar o VPA do periodo anterior ao calcular o DY no mes do split,
+    # gerando um valor 1/fator menor (desdobramento) ou fator vezes maior (grupamento).
+    # Recalcula: dy_mes = rendimentos_a_distribuir / cotas_emitidas_fundo / vpa
+    for t in tickers_list:
+        for split_mes, _, _ in fatores.get(t, []):
+            mask = (df["ticker"] == t) & (df["mes"] == split_mes)
+            if not mask.any():
+                continue
+            if "rendimentos_a_distribuir" in df.columns and "cotas_emitidas_fundo" in df.columns:
+                rend = df.loc[mask, "rendimentos_a_distribuir"]
+                cotas_f = df.loc[mask, "cotas_emitidas_fundo"]
+                vpa_f = df.loc[mask, "vpa"]
+                valid = rend.notna() & cotas_f.notna() & vpa_f.notna() & (cotas_f > 0) & (vpa_f > 0)
+                if valid.any():
+                    df.loc[mask & valid, "dy_mes"] = (rend / cotas_f / vpa_f)[valid]
 
     # Usa VPA como fallback quando nao ha cotacao de mercado
     preco_ref = df["preco_cota"].fillna(df.get("vpa"))
