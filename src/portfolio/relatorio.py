@@ -11,7 +11,7 @@ import pandas as pd
 from rich.console import Console
 from rich.table import Table
 
-from src.portfolio.carteira import get_posicoes, get_movimentacoes
+from src.portfolio.carteira import get_posicoes, get_movimentacoes, get_historico_dividendos
 from src.storage.database import connect
 
 console = Console()
@@ -126,7 +126,7 @@ def relatorio_mensal(month: str | None = None) -> None:
     if month is None:
         month = date.today().strftime("%Y-%m")
 
-    df = get_posicoes()
+    df = get_posicoes(month=month)
     if df.empty:
         console.print(
             "[yellow]Carteira vazia. "
@@ -255,3 +255,126 @@ def relatorio_mensal(month: str | None = None) -> None:
                     f"R$ {m['valor_total']:.2f}",
                 )
             console.print(mt)
+
+
+# ---------------------------------------------------------------------------
+# Historico de dividendos
+# ---------------------------------------------------------------------------
+
+def relatorio_dividendos(
+    ticker: str | None = None,
+    desde: str | None = None,
+    resumo: bool = False,
+) -> None:
+    """
+    Exibe historico de dividendos recebidos pela carteira.
+
+    ticker: filtra por ativo (opcional)
+    desde:  YYYY-MM -- mostra apenas a partir deste mes (opcional)
+    resumo: True => exibe apenas o sumario consolidado, sem detalhe mensal
+    """
+    df = get_historico_dividendos(ticker=ticker, desde=desde)
+
+    if df.empty:
+        console.print(
+            "[yellow]Sem historico de dividendos. "
+            "Verifique se a carteira tem movimentacoes e se os dados estao atualizados.[/yellow]"
+        )
+        return
+
+    tickers = df["ticker"].unique().tolist()
+
+    # ------------------------------------------------------------------
+    # Detalhe mensal por ativo (omitido em modo resumo)
+    # ------------------------------------------------------------------
+    if not resumo:
+        for t in tickers:
+            sub = df[df["ticker"] == t].sort_values("mes")
+            console.print(f"\n[bold cyan]{t}[/bold cyan] -- dividendos mensais")
+
+            dt = Table(show_header=True, header_style="bold")
+            dt.add_column("Mes",       width=8)
+            dt.add_column("Cotas",     justify="right", width=7)
+            dt.add_column("P. Cota",   justify="right", width=9)
+            dt.add_column("DY mes",    justify="right", width=8)
+            dt.add_column("Div/cota",  justify="right", width=9)
+            dt.add_column("Recebido",  justify="right", width=12)
+            dt.add_column("YoC mes",   justify="right", width=8)
+
+            for _, r in sub.iterrows():
+                preco_str = f"R$ {r['preco_cota']:.2f}" if pd.notna(r.get("preco_cota")) else "--"
+                dy_str    = f"{r['dy_mes']:.2f}%"        if pd.notna(r.get("dy_mes"))    else "--"
+                dcota_str = f"R$ {r['dividendo_cota']:.4f}" if pd.notna(r.get("dividendo_cota")) else "--"
+                rec_str   = f"R$ {r['dividendo_recebido']:.2f}" if pd.notna(r.get("dividendo_recebido")) else "--"
+                yoc_str   = f"{r['yoc_mes']:.4f}%"      if pd.notna(r.get("yoc_mes"))   else "--"
+
+                dt.add_row(
+                    str(r["mes"])[:7],
+                    str(int(r["cotas"])),
+                    preco_str,
+                    dy_str,
+                    dcota_str,
+                    rec_str,
+                    yoc_str,
+                )
+
+            console.print(dt)
+
+    # ------------------------------------------------------------------
+    # Sumario por ativo
+    # ------------------------------------------------------------------
+    console.print("\n[bold]Sumario por ativo[/bold]")
+    st = Table(show_header=True, header_style="bold")
+    st.add_column("Ticker",        style="cyan",    width=8)
+    st.add_column("Custo medio",   justify="right", width=13)
+    st.add_column("Meses",         justify="right", width=7)
+    st.add_column("Recebido total",justify="right", width=14)
+    st.add_column("YoC acum.",     justify="right", width=10)
+    st.add_column("Payback",       justify="right", width=9)
+
+    total_recebido_geral = 0.0
+    total_custo_geral    = 0.0
+
+    for t in tickers:
+        sub = df[df["ticker"] == t].dropna(subset=["dividendo_recebido"])
+        if sub.empty:
+            continue
+
+        custo_medio  = sub["custo_total"].iloc[-1]          # ultimo mes = posicao atual
+        meses        = len(sub)
+        recebido     = sub["dividendo_recebido"].sum()
+        yoc_acum     = (recebido / custo_medio * 100) if custo_medio > 0 else None
+        payback      = (recebido / custo_medio * 100) if custo_medio > 0 else None
+
+        total_recebido_geral += recebido
+        total_custo_geral    += custo_medio
+
+        yoc_str     = f"{yoc_acum:.2f}%"  if yoc_acum  is not None else "--"
+        payback_str = f"{payback:.1f}%"   if payback   is not None else "--"
+
+        st.add_row(
+            t,
+            f"R$ {custo_medio:,.2f}",
+            str(meses),
+            f"R$ {recebido:,.2f}",
+            yoc_str,
+            payback_str,
+        )
+
+    console.print(st)
+
+    # ------------------------------------------------------------------
+    # Total geral
+    # ------------------------------------------------------------------
+    if total_custo_geral > 0:
+        payback_geral = total_recebido_geral / total_custo_geral * 100
+        console.print()
+        gt = Table(show_header=False, box=None, padding=(0, 2))
+        gt.add_column("Label", style="dim")
+        gt.add_column("Valor", style="bold")
+        gt.add_row("Total recebido em dividendos", f"R$ {total_recebido_geral:,.2f}")
+        gt.add_row(
+            "Payback acumulado",
+            _color_pl(payback_geral - 0.001, f"{payback_geral:.2f}% do custo total recuperado"),
+        )
+        console.print(gt)

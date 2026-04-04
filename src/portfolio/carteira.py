@@ -104,9 +104,12 @@ def add_venda(ticker: str, cotas: int, preco: float, data: str) -> None:
             )
 
 
-def get_posicoes() -> pd.DataFrame:
+def get_posicoes(month: str | None = None) -> pd.DataFrame:
     """
     Retorna DataFrame com posicoes ativas enriquecidas com dados de mercado.
+
+    month: YYYY-MM. Se informado, usa precos e inf_mensal do mes indicado.
+           Se None, usa os dados mais recentes disponiveis.
 
     Colunas:
       ticker, cotas, preco_medio, custo_total,
@@ -115,8 +118,19 @@ def get_posicoes() -> pd.DataFrame:
       pl_capital, pl_pct,
       dy_mes, vpa, provento_est (cotas * vpa * dy_mes / 100)
     """
+    if month:
+        cot_filter = "strftime('%Y-%m', data) <= ?"
+        cot_params = (month,)
+        im_filter  = "strftime('%Y-%m', data_referencia) <= ?"
+        im_params  = (month,)
+    else:
+        cot_filter = "1=1"
+        cot_params = ()
+        im_filter  = "1=1"
+        im_params  = ()
+
     with connect() as conn:
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT
                 c.ticker,
                 c.cotas,
@@ -140,7 +154,9 @@ def get_posicoes() -> pd.DataFrame:
                 FROM cotacoes c1
                 INNER JOIN (
                     SELECT ticker, MAX(data) AS max_data
-                    FROM cotacoes GROUP BY ticker
+                    FROM cotacoes
+                    WHERE {cot_filter}
+                    GROUP BY ticker
                 ) c2 ON c1.ticker = c2.ticker AND c1.data = c2.max_data
             ) cot ON c.ticker = cot.ticker
             LEFT JOIN (
@@ -148,18 +164,202 @@ def get_posicoes() -> pd.DataFrame:
                 FROM inf_mensal im2
                 INNER JOIN (
                     SELECT cnpj, MAX(data_referencia) AS max_ref
-                    FROM inf_mensal GROUP BY cnpj
+                    FROM inf_mensal
+                    WHERE {im_filter}
+                    GROUP BY cnpj
                 ) latest ON im2.cnpj = latest.cnpj AND im2.data_referencia = latest.max_ref
                 JOIN fiis f2 ON f2.cnpj = im2.cnpj
             ) im ON f.cnpj = im.cnpj
             WHERE c.ativa = 1
             ORDER BY c.ticker
-        """).fetchall()
+        """, (*cot_params, *im_params)).fetchall()
 
     if not rows:
         return pd.DataFrame()
 
     return pd.DataFrame([dict(r) for r in rows])
+
+
+def get_historico_dividendos(
+    ticker: str | None = None,
+    desde: str | None = None,
+) -> pd.DataFrame:
+    """
+    Reconstroi historico de dividendos recebidos pela carteira, mes a mes.
+
+    Logica:
+      - Posicao mensal: reconstrói cotas e preco_medio a partir das movimentacoes
+      - dividendo_cota  = (dy_mes / 100) * preco_fechamento_do_mes
+        (fallback: VPA quando nao ha cotacao de mercado para aquele mes)
+      - dividendo_recebido = cotas * dividendo_cota
+      - yoc_mes = dividendo_recebido / custo_total * 100
+
+    Colunas:
+      mes, ticker, cotas, preco_medio, custo_total,
+      preco_cota, dy_mes, dividendo_cota, dividendo_recebido, yoc_mes
+
+    ticker: filtra por um unico ticker (opcional)
+    desde:  YYYY-MM -- ignora meses anteriores a este (opcional)
+    """
+    ticker_upper = ticker.upper() if ticker else None
+
+    with connect() as conn:
+        # Posicoes ativas para obter o CNPJ de cada ticker
+        if ticker_upper:
+            pos_rows = conn.execute(
+                "SELECT ticker, cnpj FROM carteira WHERE ticker = ? AND ativa = 1",
+                (ticker_upper,),
+            ).fetchall()
+        else:
+            pos_rows = conn.execute(
+                "SELECT ticker, cnpj FROM carteira WHERE ativa = 1"
+            ).fetchall()
+
+        if not pos_rows:
+            return pd.DataFrame()
+
+        cnpj_por_ticker: dict[str, str | None] = {r["ticker"]: r["cnpj"] for r in pos_rows}
+        tickers_list = list(cnpj_por_ticker.keys())
+        ph = ",".join("?" * len(tickers_list))
+
+        # Movimentacoes (compra/venda) para reconstruir posicao mensal
+        movs_rows = conn.execute(
+            f"""SELECT ticker, tipo, data, quantidade, preco_unitario
+                FROM movimentacoes
+                WHERE ticker IN ({ph}) AND tipo IN ('compra','venda')
+                ORDER BY data, id""",
+            tickers_list,
+        ).fetchall()
+
+        # Ultimo fechamento por ticker/mes
+        cot_rows = conn.execute(
+            f"""SELECT c.ticker, strftime('%Y-%m', c.data) AS mes, c.fechamento AS preco_cota
+                FROM cotacoes c
+                INNER JOIN (
+                    SELECT ticker, strftime('%Y-%m', data) AS mes, MAX(data) AS max_data
+                    FROM cotacoes WHERE ticker IN ({ph})
+                    GROUP BY ticker, mes
+                ) latest ON c.ticker = latest.ticker AND c.data = latest.max_data""",
+            tickers_list,
+        ).fetchall()
+
+        # DY mensal e VPA por cnpj/mes
+        cnpjs = [v for v in cnpj_por_ticker.values() if v]
+        if cnpjs:
+            ph_c = ",".join("?" * len(cnpjs))
+            im_rows = conn.execute(
+                f"""SELECT f.ticker,
+                           strftime('%Y-%m', im.data_referencia) AS mes,
+                           im.dy_mes,
+                           im.valor_patrimonial_cota AS vpa
+                    FROM inf_mensal im
+                    JOIN fiis f ON f.cnpj = im.cnpj
+                    WHERE im.cnpj IN ({ph_c}) AND im.dy_mes IS NOT NULL""",
+                cnpjs,
+            ).fetchall()
+        else:
+            im_rows = []
+
+    if not movs_rows:
+        return pd.DataFrame()
+
+    movs = pd.DataFrame([dict(r) for r in movs_rows])
+    movs["data"] = pd.to_datetime(movs["data"])
+    movs["quantidade"] = pd.to_numeric(movs["quantidade"])
+    movs["preco_unitario"] = pd.to_numeric(movs["preco_unitario"])
+
+    cot_df = (
+        pd.DataFrame([dict(r) for r in cot_rows])
+        if cot_rows
+        else pd.DataFrame(columns=["ticker", "mes", "preco_cota"])
+    )
+    im_df = (
+        pd.DataFrame([dict(r) for r in im_rows])
+        if im_rows
+        else pd.DataFrame(columns=["ticker", "mes", "dy_mes", "vpa"])
+    )
+
+    desde_period = pd.Period(desde, freq="M") if desde else None
+    hoje = pd.Timestamp.today()
+    # Meses ja fechados (exclui mes corrente, cujo DY ainda nao esta completo)
+    ultimo_mes = (hoje.to_period("M") - 1)
+
+    registros: list[dict] = []
+
+    for t in tickers_list:
+        t_movs = movs[movs["ticker"] == t].sort_values("data")
+        if t_movs.empty:
+            continue
+
+        primeiro_mes = t_movs["data"].min().to_period("M")
+        inicio = max(primeiro_mes, desde_period) if desde_period else primeiro_mes
+
+        if inicio > ultimo_mes:
+            continue
+
+        # Reconstroi cotas e preco_medio evento a evento
+        cotas_acc: int = 0
+        pm_acc: float = 0.0
+        eventos: list[tuple] = []  # (timestamp, cotas, preco_medio)
+
+        for _, mv in t_movs.iterrows():
+            q = int(mv["quantidade"])
+            p = float(mv["preco_unitario"]) if pd.notna(mv["preco_unitario"]) else 0.0
+            if mv["tipo"] == "compra":
+                total = cotas_acc + q
+                pm_acc = (cotas_acc * pm_acc + q * p) / total if total > 0 else p
+                cotas_acc = total
+            else:
+                cotas_acc = max(0, cotas_acc - q)
+            eventos.append((mv["data"], cotas_acc, pm_acc))
+
+        for mes in pd.period_range(inicio, ultimo_mes, freq="M"):
+            fim = mes.to_timestamp("M")
+            cotas_mes, pm_mes = 0, 0.0
+            for ev_data, ev_cotas, ev_pm in eventos:
+                if ev_data <= fim:
+                    cotas_mes, pm_mes = ev_cotas, ev_pm
+                else:
+                    break
+
+            if cotas_mes <= 0:
+                continue
+
+            registros.append({
+                "mes":         str(mes),
+                "ticker":      t,
+                "cotas":       cotas_mes,
+                "preco_medio": round(pm_mes, 4),
+            })
+
+    if not registros:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(registros)
+
+    # Junta cotacoes e inf_mensal
+    if not cot_df.empty:
+        df = df.merge(cot_df, on=["ticker", "mes"], how="left")
+    else:
+        df["preco_cota"] = None
+
+    if not im_df.empty:
+        df = df.merge(im_df, on=["ticker", "mes"], how="left")
+    else:
+        df["dy_mes"] = None
+        df["vpa"] = None
+
+    # Usa VPA como fallback quando nao ha cotacao de mercado
+    preco_ref = df["preco_cota"].fillna(df.get("vpa"))
+
+    df["custo_total"]         = (df["cotas"] * df["preco_medio"]).round(2)
+    df["dividendo_cota"]      = (df["dy_mes"] / 100.0 * preco_ref).round(6)
+    df["dividendo_recebido"]  = (df["cotas"] * df["dividendo_cota"]).round(2)
+    df["yoc_mes"]             = (df["dividendo_recebido"] / df["custo_total"] * 100).round(4)
+
+    cols = ["mes", "ticker", "cotas", "preco_medio", "custo_total",
+            "preco_cota", "dy_mes", "dividendo_cota", "dividendo_recebido", "yoc_mes"]
+    return df[[c for c in cols if c in df.columns]].sort_values(["ticker", "mes"]).reset_index(drop=True)
 
 
 def export_template(path: str) -> None:

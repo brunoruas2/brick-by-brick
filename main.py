@@ -551,6 +551,26 @@ def portfolio_import(
         console.print("[yellow]Nenhuma operacao encontrada no arquivo.[/yellow]")
 
 
+@portfolio_app.command("dividends")
+def portfolio_dividends(
+    ticker: str = typer.Option(
+        None, "--ticker", "-t",
+        help="Filtrar por ticker (ex: HGLG11).",
+    ),
+    desde: str = typer.Option(
+        None, "--desde", "-d",
+        help="Mes inicial no formato YYYY-MM.",
+    ),
+    resumo: bool = typer.Option(
+        False, "--resumo", "-r",
+        help="Exibe apenas o sumario consolidado, sem detalhe mensal.",
+    ),
+):
+    """Historico de dividendos recebidos: YoC mensal, acumulado e payback."""
+    from src.portfolio.relatorio import relatorio_dividendos
+    relatorio_dividendos(ticker=ticker, desde=desde, resumo=resumo)
+
+
 @portfolio_app.command("history")
 def portfolio_history(
     ticker: str = typer.Argument(None, help="Ticker para filtrar (opcional)"),

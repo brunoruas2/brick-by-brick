@@ -175,8 +175,20 @@ python main.py portfolio show
 # Relatório mensal completo: proventos estimados, YoC e comparativo com SELIC/IPCA
 python main.py portfolio report
 
-# Relatório de um mês específico
+# Relatório de um mês específico (usa preços e DY da competência correta)
 python main.py portfolio report --month 2025-12
+
+# Histórico de dividendos recebidos: YoC mensal, acumulado e payback
+python main.py portfolio dividends
+
+# Dividendos de um FII específico
+python main.py portfolio dividends --ticker HGLG11
+
+# Dividendos a partir de um mês (ex: 2025-01)
+python main.py portfolio dividends --desde 2025-01
+
+# Apenas o sumário consolidado, sem detalhe mês a mês
+python main.py portfolio dividends --resumo
 
 # Histórico de todas as operações
 python main.py portfolio history
@@ -190,12 +202,24 @@ python main.py portfolio history HGLG11
 | Indicador | O que representa |
 |---|---|
 | P. Médio | Preço médio ponderado de compra |
-| Valor atual | Cotas × preço de fechamento mais recente (B3) |
+| Valor atual | Cotas × preço de fechamento do mês analisado (B3) |
 | P&L | Ganho/perda de capital vs custo de aquisição |
 | Prov. est. | Estimativa de provento do mês (cotas × VPA × DY%) |
 | YoC mês | Yield on Cost mensal (provento est. / custo total) |
 | YoC anual | YoC mês × 12 |
 | Spread YoC vs SELIC | YoC mensal menos SELIC do mesmo mês |
+
+**Indicadores do histórico de dividendos (`portfolio dividends`):**
+
+| Indicador | O que representa |
+|---|---|
+| Div/cota | Dividendo por cota do mês = (DY% × preço de fechamento do mês) |
+| Recebido | Cotas detidas no mês × dividendo/cota |
+| YoC mês | Dividendo recebido / custo total × 100 |
+| YoC acum. | Total recebido / custo total × 100 |
+| Payback | Percentual do custo de aquisição recuperado em dividendos |
+
+> A posição mensal é reconstruída a partir do histórico de compras e vendas — o relatório reflete exatamente quantas cotas você detinha em cada mês, ao preço médio vigente naquele momento.
 
 ---
 
@@ -285,13 +309,14 @@ python main.py screen [filtros]            # Screener com score ponderado
 python main.py info TICKER                 # Indicadores detalhados de um FII
 python main.py compare TICKER [TICKER...]  # Comparação lado a lado
 
-python main.py portfolio add      TICKER COTAS PRECO DATA   # Registra compra
-python main.py portfolio sell     TICKER COTAS PRECO DATA   # Registra venda
-python main.py portfolio template [--output ARQUIVO]        # Gera template Excel
-python main.py portfolio import   ARQUIVO [--dry-run]       # Importa do Excel
-python main.py portfolio show                               # Posições com P&L
-python main.py portfolio report   [--month YYYY-MM]         # Relatório mensal
-python main.py portfolio history  [TICKER]                  # Histórico de operações
+python main.py portfolio add       TICKER COTAS PRECO DATA           # Registra compra
+python main.py portfolio sell      TICKER COTAS PRECO DATA           # Registra venda
+python main.py portfolio template  [--output ARQUIVO]                # Gera template Excel
+python main.py portfolio import    ARQUIVO [--dry-run]               # Importa do Excel
+python main.py portfolio show                                        # Posições com P&L
+python main.py portfolio report    [--month YYYY-MM]                 # Relatório mensal
+python main.py portfolio dividends [--ticker T] [--desde YYYY-MM] [--resumo]  # Histórico de dividendos
+python main.py portfolio history   [TICKER]                          # Histórico de operações
 
 python main.py alerts [opções]             # Alertas e oportunidades
 python main.py scheduler                   # Agendador automático (foreground)

@@ -61,9 +61,10 @@ python main.py info HGLG11
 
 # 4. Build your portfolio — manually or via Excel import
 python main.py portfolio add HGLG11 100 165.50 2024-06-15
-python main.py portfolio template          # generate carteira_template.xlsx
+python main.py portfolio template              # generate carteira_template.xlsx
 python main.py portfolio import carteira.xlsx  # bulk import from Excel
-python main.py portfolio report
+python main.py portfolio report                # monthly report (uses correct month's prices)
+python main.py portfolio dividends             # dividend history, YoC and payback
 ```
 
 ---
