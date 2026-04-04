@@ -162,6 +162,170 @@ def get_posicoes() -> pd.DataFrame:
     return pd.DataFrame([dict(r) for r in rows])
 
 
+def export_template(path: str) -> None:
+    """
+    Salva um arquivo Excel com o template de importacao de carteira.
+
+    Colunas: ticker | tipo | data | cotas | preco
+    Inclui linhas de exemplo e validacao de lista suspensa para 'tipo'.
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "carteira"
+
+    # Cabecalho
+    headers = ["ticker", "tipo", "data", "cotas", "preco"]
+    header_fill = PatternFill("solid", fgColor="1F4E79")
+    header_font = Font(bold=True, color="FFFFFF")
+    for col, h in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    # Linhas de exemplo
+    exemplos = [
+        ["HGLG11", "compra", "2024-06-15", 100, 165.50],
+        ["MXRF11", "compra", "2024-08-10", 500,   9.85],
+        ["XPLG11", "compra", "2024-09-20", 200, 103.20],
+        ["MXRF11", "venda",  "2026-04-01", 100,  10.20],
+    ]
+    example_fill = PatternFill("solid", fgColor="D9E1F2")
+    for row_idx, row_data in enumerate(exemplos, start=2):
+        for col_idx, value in enumerate(row_data, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.fill = example_fill
+            if col_idx == 5:
+                cell.number_format = "#,##0.00"
+
+    # Validacao de lista suspensa para coluna 'tipo' (B)
+    dv = DataValidation(type="list", formula1='"compra,venda"', allow_blank=False)
+    dv.sqref = "B2:B10000"
+    ws.add_data_validation(dv)
+
+    # Largura das colunas
+    ws.column_dimensions["A"].width = 12  # ticker
+    ws.column_dimensions["B"].width = 10  # tipo
+    ws.column_dimensions["C"].width = 14  # data
+    ws.column_dimensions["D"].width = 8   # cotas
+    ws.column_dimensions["E"].width = 12  # preco
+
+    # Aba de instrucoes
+    wi = wb.create_sheet("instrucoes")
+    instrucoes = [
+        ("Campo",  "Formato",        "Exemplo",     "Obrigatorio"),
+        ("ticker", "Texto maiusculo", "HGLG11",      "Sim"),
+        ("tipo",   "compra ou venda", "compra",      "Sim"),
+        ("data",   "YYYY-MM-DD",      "2024-06-15",  "Sim"),
+        ("cotas",  "Numero inteiro",  "100",         "Sim"),
+        ("preco",  "Preco por cota",  "165.50",      "Sim"),
+    ]
+    hf = Font(bold=True)
+    for r, row in enumerate(instrucoes, start=1):
+        for c, val in enumerate(row, start=1):
+            cell = wi.cell(row=r, column=c, value=val)
+            if r == 1:
+                cell.font = hf
+    wi.column_dimensions["A"].width = 10
+    wi.column_dimensions["B"].width = 20
+    wi.column_dimensions["C"].width = 16
+    wi.column_dimensions["D"].width = 12
+
+    wb.save(path)
+
+
+def import_from_excel(path: str, dry_run: bool = False) -> tuple[int, list[str]]:
+    """
+    Le o arquivo Excel (aba 'carteira') e registra as operacoes.
+
+    Retorna:
+        (n_sucesso, lista_de_erros)
+
+    Erros nao interrompem o processamento: linhas validas sao inseridas
+    mesmo que outras contenham erros.
+    """
+    df = pd.read_excel(path, sheet_name="carteira", dtype=str)
+    df.columns = [c.strip().lower() for c in df.columns]
+
+    required = {"ticker", "tipo", "data", "cotas", "preco"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Colunas ausentes no arquivo: {', '.join(sorted(missing))}")
+
+    erros: list[str] = []
+    n_sucesso = 0
+
+    for i, row in df.iterrows():
+        linha = i + 2  # +2 porque cabecalho e index 0-based
+
+        # Ignora linhas completamente vazias
+        if all(pd.isna(row[c]) or str(row[c]).strip() == "" for c in required):
+            continue
+
+        # Valida campos obrigatorios
+        valores: dict = {}
+        ok = True
+        for campo in required:
+            v = str(row.get(campo, "")).strip()
+            if not v or v.lower() == "nan":
+                erros.append(f"Linha {linha}: campo '{campo}' vazio")
+                ok = False
+        if not ok:
+            continue
+
+        ticker = str(row["ticker"]).strip().upper()
+        tipo   = str(row["tipo"]).strip().lower()
+        data   = str(row["data"]).strip()
+
+        if tipo not in ("compra", "venda"):
+            erros.append(f"Linha {linha} ({ticker}): tipo '{tipo}' invalido — use 'compra' ou 'venda'")
+            continue
+
+        try:
+            cotas = int(float(str(row["cotas"]).strip()))
+            if cotas <= 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            erros.append(f"Linha {linha} ({ticker}): 'cotas' deve ser inteiro positivo")
+            continue
+
+        try:
+            preco = float(str(row["preco"]).strip().replace(",", "."))
+            if preco <= 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            erros.append(f"Linha {linha} ({ticker}): 'preco' deve ser numero positivo")
+            continue
+
+        # Valida formato da data
+        try:
+            pd.Timestamp(data)
+            # Normaliza para YYYY-MM-DD independente do formato de entrada
+            data = pd.Timestamp(data).strftime("%Y-%m-%d")
+        except Exception:
+            erros.append(f"Linha {linha} ({ticker}): data '{data}' invalida — use YYYY-MM-DD")
+            continue
+
+        if dry_run:
+            n_sucesso += 1
+            continue
+
+        try:
+            if tipo == "compra":
+                add_compra(ticker, cotas, preco, data)
+            else:
+                add_venda(ticker, cotas, preco, data)
+            n_sucesso += 1
+        except Exception as e:
+            erros.append(f"Linha {linha} ({ticker}): {e}")
+
+    return n_sucesso, erros
+
+
 def get_movimentacoes(ticker: str | None = None) -> pd.DataFrame:
     """Retorna historico de movimentacoes, opcionalmente filtrado por ticker."""
     with connect() as conn:

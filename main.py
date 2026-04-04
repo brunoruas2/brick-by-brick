@@ -496,6 +496,61 @@ def portfolio_report(
     relatorio_mensal(month)
 
 
+@portfolio_app.command("template")
+def portfolio_template(
+    output: str = typer.Option(
+        "carteira_template.xlsx",
+        "--output", "-o",
+        help="Caminho do arquivo Excel a gerar.",
+    ),
+):
+    """Gera um arquivo Excel com o template de importacao de carteira."""
+    from src.portfolio.carteira import export_template
+    try:
+        export_template(output)
+        console.print(f"[green]Template salvo em:[/green] {output}")
+        console.print("[dim]Preencha o arquivo e importe com: python main.py portfolio import <arquivo>[/dim]")
+    except Exception as e:
+        console.print(f"[red]Erro ao gerar template: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@portfolio_app.command("import")
+def portfolio_import(
+    arquivo: str = typer.Argument(..., help="Caminho do Excel preenchido."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Valida sem inserir no banco.",
+    ),
+):
+    """Importa movimentacoes de carteira a partir de um arquivo Excel."""
+    import os
+    from src.portfolio.carteira import import_from_excel
+
+    if not os.path.isfile(arquivo):
+        console.print(f"[red]Arquivo nao encontrado: {arquivo}[/red]")
+        raise typer.Exit(code=1)
+
+    if dry_run:
+        console.print("[yellow]Modo dry-run: nenhuma alteracao sera salva.[/yellow]")
+
+    try:
+        n_ok, erros = import_from_excel(arquivo, dry_run=dry_run)
+    except ValueError as e:
+        console.print(f"[red]Erro no arquivo: {e}[/red]")
+        raise typer.Exit(code=1)
+
+    if n_ok:
+        label = "validadas" if dry_run else "importadas"
+        console.print(f"[green]{n_ok} operacao(oes) {label} com sucesso.[/green]")
+    if erros:
+        console.print(f"[yellow]{len(erros)} linha(s) com erro:[/yellow]")
+        for e in erros:
+            console.print(f"  [red]•[/red] {e}")
+    if not n_ok and not erros:
+        console.print("[yellow]Nenhuma operacao encontrada no arquivo.[/yellow]")
+
+
 @portfolio_app.command("history")
 def portfolio_history(
     ticker: str = typer.Argument(None, help="Ticker para filtrar (opcional)"),
