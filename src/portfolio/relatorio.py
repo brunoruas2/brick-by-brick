@@ -282,6 +282,18 @@ def relatorio_dividendos(
         )
         return
 
+    # Avisa sobre meses sem DY (dados nao baixados para aquele periodo)
+    sem_dy = df["dy_mes"].isna().sum()
+    total  = len(df)
+    if sem_dy > 0:
+        mes_min = df.loc[df["dy_mes"].isna(), "mes"].min()
+        console.print(
+            f"[yellow]Aviso: {sem_dy}/{total} mes(es) sem DY disponivel "
+            f"(primeiro: {mes_min}). "
+            f"Para baixar dados mais antigos: "
+            f"python main.py update inf-mensal --desde-ano {mes_min[:4]}[/yellow]"
+        )
+
     tickers = df["ticker"].unique().tolist()
 
     # ------------------------------------------------------------------

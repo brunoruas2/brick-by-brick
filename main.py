@@ -49,11 +49,14 @@ def _fmt_reais(v) -> str:
     return f"R$ {v:.0f}"
 
 
-def _execute_update(targets: list[str]) -> list[tuple[str, int]]:
+def _execute_update(targets: list[str], desde_ano: int | None = None) -> list[tuple[str, int]]:
     """
     Executa a atualizacao das fontes indicadas e retorna (label, count) por fonte.
     Chamado tanto pelo comando 'update' quanto pelo scheduler.
+
+    desde_ano: se informado, baixa inf-mensal e cotahist desde esse ano ate o atual.
     """
+    import datetime as _dt
     from src.storage.database import (
         init_db, upsert_fiis, upsert_inf_mensal, update_fiis_metadata,
         upsert_cotacoes, upsert_benchmarks, update_fiis_isin,
@@ -64,19 +67,25 @@ def _execute_update(targets: list[str]) -> list[tuple[str, int]]:
     init_db()
     results: list[tuple[str, int]] = []
 
+    ano_atual = _dt.datetime.now().year
+    if desde_ano:
+        years = list(range(desde_ano, ano_atual + 1))
+    else:
+        years = None  # usa o padrao do coletor (atual + anterior)
+
     if "cadastro" in targets:
         records = cvm_cadastro.fetch()
         results.append(("Cadastro CVM", upsert_fiis(records)))
 
     if "inf-mensal" in targets:
-        inf_records, meta_records = cvm_inf_mensal.fetch()
+        inf_records, meta_records = cvm_inf_mensal.fetch(years=years)
         results.append(("Informe Mensal CVM", upsert_inf_mensal(inf_records)))
         results.append(("  segmento/mandato", update_fiis_metadata(meta_records)))
         update_fiis_isin(meta_records)
 
     if "cotahist" in targets:
         from src.collectors import b3_cotahist
-        cotacao_records, isin_ticker_records = b3_cotahist.fetch()
+        cotacao_records, isin_ticker_records = b3_cotahist.fetch(years=years)
         results.append(("COTAHIST B3", upsert_cotacoes(cotacao_records)))
         upsert_isin_ticker(isin_ticker_records)
 
@@ -96,11 +105,16 @@ def update(
         "all",
         help="Fonte: all | cadastro | inf-mensal | cotahist | benchmarks",
     ),
+    desde_ano: int = typer.Option(
+        None, "--desde-ano",
+        help="Ano inicial para inf-mensal e cotahist (ex: 2024). Padrao: ano atual e anterior.",
+    ),
 ):
     """
     Baixa dados das fontes primarias (CVM, B3, BCB) e salva no banco local.
 
     Sem argumentos atualiza todas as fontes. Idempotente.
+    Use --desde-ano para baixar historico mais antigo de inf-mensal e cotahist.
     """
     console.print(Panel.fit("Brick by Brick -- Atualizacao de dados", style="bold blue"))
     console.print("[dim]  Banco:[/dim] data/brickbybrick.sqlite\n")
@@ -115,7 +129,7 @@ def update(
             )
             raise typer.Exit(code=1)
 
-    results = _execute_update(targets)
+    results = _execute_update(targets, desde_ano=desde_ano)
 
     console.print()
     table = Table(show_header=True, header_style="bold")

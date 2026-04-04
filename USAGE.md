@@ -263,6 +263,14 @@ python main.py update inf-mensal
 python main.py update benchmarks
 ```
 
+> **Histórico mais antigo:** por padrão, `inf-mensal` e `cotahist` baixam apenas o ano atual e o anterior. Se a sua carteira tiver compras mais antigas ou se o relatório de dividendos avisar sobre meses sem DY, baixe os anos necessários com `--desde-ano`:
+>
+> ```bash
+> # Baixa inf-mensal e cotahist de 2024 até hoje
+> python main.py update inf-mensal --desde-ano 2024
+> python main.py update cotahist   --desde-ano 2024
+> ```
+
 #### Opção B — scheduler automático (foreground)
 
 ```bash
