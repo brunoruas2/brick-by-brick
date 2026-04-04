@@ -21,7 +21,7 @@ console = Console()
 
 # Fontes implementadas por etapa do M1
 # Adicionamos aqui à medida que cada collector for concluído
-_SOURCES_AVAILABLE = ["cadastro", "inf-mensal"]
+_SOURCES_AVAILABLE = ["cadastro", "inf-mensal", "cotahist", "benchmarks"]
 
 
 @app.command()
@@ -42,6 +42,7 @@ def update(
     """
     from src.storage.database import (
         init_db, upsert_fiis, upsert_inf_mensal, update_fiis_metadata,
+        upsert_cotacoes, upsert_benchmarks,
     )
     from src.collectors import cvm_cadastro, cvm_inf_mensal
 
@@ -78,10 +79,19 @@ def update(
         results.append(("Informe Mensal CVM", n_inf))
         results.append(("  segmento/mandato atualizados", n_meta))
 
-    # --- Etapas futuras (adicionadas aqui conforme implementacao) ---
-    # if "inf-diario" in targets:   ...  (etapa 1.3)
-    # if "cotahist"   in targets:   ...  (etapa 1.4)
-    # if "benchmarks" in targets:   ...  (etapa 1.5)
+    # --- Etapa 1.4: Cotacoes historicas B3 (COTAHIST) ---
+    if "cotahist" in targets:
+        from src.collectors import b3_cotahist
+        cotacao_records = b3_cotahist.fetch()
+        n_cot = upsert_cotacoes(cotacao_records)
+        results.append(("COTAHIST B3", n_cot))
+
+    # --- Etapa 1.5: Benchmarks BCB (SELIC, CDI, IPCA) ---
+    if "benchmarks" in targets:
+        from src.collectors import bcb_series
+        bench_records = bcb_series.fetch(months=24)
+        n_bench = upsert_benchmarks(bench_records)
+        results.append(("Benchmarks BCB (24 meses)", n_bench))
 
     console.print()
     table = Table(show_header=True, header_style="bold")
