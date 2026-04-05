@@ -69,6 +69,12 @@ python main.py portfolio allocation            # capital allocation by ticker an
 python main.py portfolio income --meses 12     # monthly dividend income chart
 python main.py portfolio watch HGLG11 --preco-alvo 150  # add to watchlist
 python main.py portfolio watchlist             # show watchlist with live indicators
+
+# 5. Backtest — what-if simulations
+python main.py backtest swap VISC11 HGLG11 2024-06          # if I had swapped VISC11 for HGLG11 in Jun/24?
+python main.py backtest swap VISC11 HGLG11 2024-06 --cotas 200  # with explicit share count
+python main.py backtest add HGLG11 2024-01 --cotas 100          # if I had bought 100 shares in Jan/24?
+python main.py backtest add HGLG11 2024-01 --capital 16500      # if I had invested R$16,500?
 ```
 
 ---

@@ -312,7 +312,41 @@ Após registrar o evento, rode `portfolio dividends` para ver o histórico corri
 
 ---
 
-### 6. Verificar alertas
+### 6. Backtest — simulações hipotéticas (what-if)
+
+O módulo de backtest permite avaliar o impacto de decisões passadas hipotéticas na carteira: "e se eu tivesse feito X em tal mês?". É útil para comparar ativos e calibrar decisões futuras.
+
+> **Limites da simulação:** custos operacionais (corretagem, IR, IOF) não são modelados. Splits no período simulado são detectados e avisados, mas não corrigidos no cenário hipotético.
+
+#### 6a. Simular uma troca entre dois FIIs
+
+```bash
+# "Se eu tivesse trocado VISC11 por HGLG11 em junho de 2024, qual seria o resultado hoje?"
+# Usa as cotas de VISC11 registradas na carteira naquele mês
+python main.py backtest swap VISC11 HGLG11 2024-06
+
+# Com quantidade explícita de cotas (não precisa ter VISC11 na carteira)
+python main.py backtest swap VISC11 HGLG11 2024-06 --cotas 200
+```
+
+O comando mostra, lado a lado:
+- **Cenário real:** manter VISC11 desde o mês indicado — dividendos recebidos e retorno total
+- **Cenário simulado:** ter vendido VISC11 e comprado HGLG11 com o mesmo capital
+- **Comparação:** diferença em dividendos, valor atual e retorno total (%)
+
+#### 6b. Simular uma compra adicional
+
+```bash
+# "Se eu tivesse comprado 100 cotas de HGLG11 em janeiro de 2024, qual seria o resultado?"
+python main.py backtest add HGLG11 2024-01 --cotas 100
+
+# Informando capital em vez de cotas (calcula cotas automaticamente pelo preço do mês)
+python main.py backtest add HGLG11 2024-01 --capital 16500
+```
+
+---
+
+### 7. Verificar alertas
 
 ```bash
 # Alertas com limiares padrão
@@ -423,6 +457,9 @@ python main.py portfolio add-split   TICKER YYYY-MM FATOR [--tipo T] [--obs S]
 
 python main.py alerts [opções]             # Alertas e oportunidades
 python main.py scheduler                   # Agendador automático (foreground)
+
+python main.py backtest swap TICKER_OUT TICKER_IN YYYY-MM [--cotas N]  # Simula troca entre FIIs
+python main.py backtest add  TICKER YYYY-MM [--cotas N | --capital R$]  # Simula compra adicional
 ```
 
 ---

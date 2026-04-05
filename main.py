@@ -31,6 +31,9 @@ app = typer.Typer(
 )
 portfolio_app = typer.Typer(help="Gestao da carteira de FIIs")
 app.add_typer(portfolio_app, name="portfolio")
+
+backtest_app = typer.Typer(help="Simulacoes hipoteticas (what-if) sobre a carteira")
+app.add_typer(backtest_app, name="backtest")
 console = Console()
 
 _SOURCES_AVAILABLE = ["cadastro", "inf-mensal", "cotahist", "benchmarks"]
@@ -950,6 +953,168 @@ def portfolio_watchlist():
         )
 
     console.print(t)
+
+
+# ---------------------------------------------------------------------------
+# Backtest
+# ---------------------------------------------------------------------------
+
+def _print_scenario(label: str, sc, console) -> None:
+    """Exibe os resultados de um ScenarioResult no terminal."""
+    import pandas as pd
+
+    console.print(f"\n[bold]{label}: {sc.ticker}[/bold]  (entrada: {sc.mes_inicio})")
+    console.print(
+        f"  Cotas: {sc.cotas:.2f}  |  "
+        f"Preco entrada: R$ {sc.preco_entrada:.2f}  |  "
+        f"Capital: R$ {sc.capital_investido:,.2f}"
+    )
+
+    preco_str = f"R$ {sc.preco_atual:.2f}" if sc.preco_atual is not None else "--"
+    valor_str = f"R$ {sc.valor_atual:,.2f}" if sc.valor_atual is not None else "--"
+    ret_str   = (
+        f"{sc.total_return:+.2f}%"
+        if sc.total_return is not None
+        else "--"
+    )
+    cor_ret = "green" if (sc.total_return or 0) >= 0 else "red"
+
+    console.print(f"  Preco atual ({label.lower()} mes fechado): {preco_str}")
+    console.print(f"  Valor atual: {valor_str}")
+    console.print(f"  Dividendos recebidos: R$ {sc.dividendos_total:,.2f}")
+    console.print(f"  Retorno total: [{cor_ret}]{ret_str}[/{cor_ret}]")
+
+    if not sc.dividendos_mensais.empty:
+        console.print(f"\n  [dim]Dividendos mensais ({len(sc.dividendos_mensais)} meses):[/dim]")
+        dt = Table(show_header=True, header_style="dim", box=None, padding=(0, 1))
+        dt.add_column("Mes",          width=8)
+        dt.add_column("DY mes",       justify="right", width=8)
+        dt.add_column("Preco cota",   justify="right", width=10)
+        dt.add_column("Div/cota",     justify="right", width=9)
+        dt.add_column("Recebido",     justify="right", width=12)
+        for _, dr in sc.dividendos_mensais.iterrows():
+            dt.add_row(
+                str(dr["mes"]),
+                f"{dr['dy_mes']*100:.2f}%"     if pd.notna(dr.get("dy_mes"))           else "--",
+                f"R$ {dr['preco_cota']:.2f}"   if pd.notna(dr.get("preco_cota"))       else "--",
+                f"R$ {dr['dividendo_cota']:.4f}" if pd.notna(dr.get("dividendo_cota")) else "--",
+                f"R$ {dr['dividendo_recebido']:.2f}" if pd.notna(dr.get("dividendo_recebido")) else "--",
+            )
+        console.print(dt)
+
+    for aviso in sc.avisos:
+        console.print(f"  [yellow]Aviso: {aviso}[/yellow]")
+
+
+@backtest_app.command("swap")
+def backtest_swap(
+    ticker_out: str   = typer.Argument(...,  help="Ticker que seria vendido (ex: VISC11)"),
+    ticker_in:  str   = typer.Argument(...,  help="Ticker que seria comprado (ex: HGLG11)"),
+    mes:        str   = typer.Argument(...,  help="Mes hipotetico da troca (YYYY-MM)"),
+    cotas:      float = typer.Option(None,   "--cotas", "-c", help="Cotas de ticker_out. Padrao: busca da carteira."),
+):
+    """
+    Simula o que teria acontecido se voce tivesse trocado um FII por outro.
+
+    Compara o cenario real (manter ticker_out) com o hipotetico (comprar ticker_in
+    com o mesmo capital). Mostra dividendos recebidos e retorno total em ambos.
+
+    Exemplo:
+        python main.py backtest swap VISC11 HGLG11 2024-06
+        python main.py backtest swap VISC11 HGLG11 2024-06 --cotas 200
+    """
+    from src.analysis.backtest import simular_swap, BacktestError
+
+    try:
+        resultado = simular_swap(ticker_out, ticker_in, mes, cotas=cotas)
+    except BacktestError as e:
+        console.print(f"[red]Erro: {e}[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"\n[bold cyan]Backtest -- Swap hipotetico[/bold cyan]  "
+        f"{resultado.ticker_out} -> {resultado.ticker_in}  em {resultado.mes}"
+    )
+    console.print("[dim]Comparacao: manter o FII original vs. ter trocado pelo alternativo.[/dim]")
+
+    _print_scenario("Real", resultado.real, console)
+    _print_scenario("Simulado", resultado.simulado, console)
+
+    # Resumo comparativo
+    real = resultado.real
+    sim  = resultado.simulado
+    console.print("\n[bold]Comparacao:[/bold]")
+    ct = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    ct.add_column("",              width=22)
+    ct.add_column(real.ticker,     justify="right", width=14)
+    ct.add_column(sim.ticker,      justify="right", width=14)
+    ct.add_column("Delta",         justify="right", width=12)
+
+    def _fmt_r(v):
+        return f"R$ {v:,.2f}" if v is not None else "--"
+
+    def _fmt_p(v):
+        if v is None:
+            return "--"
+        cor = "green" if v >= 0 else "red"
+        return f"[{cor}]{v:+.2f}%[/{cor}]"
+
+    def _delta_r(a, b):
+        if a is None or b is None:
+            return "--"
+        d = b - a
+        cor = "green" if d >= 0 else "red"
+        return f"[{cor}]{'+' if d >= 0 else ''}{d:,.2f}[/{cor}]"
+
+    def _delta_p(a, b):
+        if a is None or b is None:
+            return "--"
+        d = b - a
+        cor = "green" if d >= 0 else "red"
+        return f"[{cor}]{d:+.2f} p.p.[/{cor}]"
+
+    ct.add_row("Capital investido",  _fmt_r(real.capital_investido),  _fmt_r(sim.capital_investido),  _delta_r(real.capital_investido,  sim.capital_investido))
+    ct.add_row("Dividendos totais",  _fmt_r(real.dividendos_total),   _fmt_r(sim.dividendos_total),   _delta_r(real.dividendos_total,   sim.dividendos_total))
+    ct.add_row("Valor atual",        _fmt_r(real.valor_atual),        _fmt_r(sim.valor_atual),        _delta_r(real.valor_atual,        sim.valor_atual))
+    ct.add_row("Retorno total",      _fmt_p(real.total_return),       _fmt_p(sim.total_return),       _delta_p(real.total_return,       sim.total_return))
+
+    console.print(ct)
+    console.print("\n[dim]Custos operacionais (corretagem, IR) nao estao modelados.[/dim]")
+
+
+@backtest_app.command("add")
+def backtest_add(
+    ticker:  str   = typer.Argument(..., help="Ticker do FII (ex: HGLG11)"),
+    mes:     str   = typer.Argument(..., help="Mes hipotetico de compra (YYYY-MM)"),
+    cotas:   float = typer.Option(None, "--cotas",   "-c", help="Numero de cotas"),
+    capital: float = typer.Option(None, "--capital", "-k", help="Capital a investir em R$"),
+):
+    """
+    Simula o que teria acontecido se voce tivesse comprado um FII em determinado mes.
+
+    Informe --cotas OU --capital (nao ambos).
+
+    Exemplos:
+        python main.py backtest add HGLG11 2024-01 --cotas 100
+        python main.py backtest add HGLG11 2024-01 --capital 16500
+    """
+    from src.analysis.backtest import simular_add, BacktestError
+
+    try:
+        resultado = simular_add(ticker, mes, cotas=cotas, capital=capital)
+    except BacktestError as e:
+        console.print(f"[red]Erro: {e}[/red]")
+        raise typer.Exit(code=1)
+
+    sc = resultado.simulado
+    console.print(
+        f"\n[bold cyan]Backtest -- Compra hipotetica[/bold cyan]  "
+        f"{sc.ticker}  em {sc.mes_inicio}"
+    )
+    console.print("[dim]Simulacao: resultado se tivesse comprado o FII neste mes.[/dim]")
+
+    _print_scenario("Simulado", sc, console)
+    console.print("\n[dim]Custos operacionais (corretagem, IR) nao estao modelados.[/dim]")
 
 
 if __name__ == "__main__":
