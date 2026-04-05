@@ -188,21 +188,23 @@ Dado que quero sair de HGLG11 e entrar em XPLG11, qual é o ganho líquido de Yo
 
 ## 6. Lacunas estruturais de dados
 
-Estas lacunas **não podem ser resolvidas** com as fontes primárias atuais — independente de quanto o sistema evolua:
+Lacunas que não são resolvíveis com as fontes primárias atuais via coleta estruturada:
 
-| Dado | Por que é importante | Fontes alternativas |
+| Dado | Por que é importante | Status |
 |---|---|---|
-| **Taxa de vacância** | Principal driver de risco em FIIs de tijolo | Relatórios gerenciais dos gestores (PDF) — não estruturado |
-| **Perfil de vencimento de contratos** | Quando os aluguéis vencem e precisam ser renovados | Relatórios gerenciais |
-| **Localização e qualidade dos ativos** | Imóvel prime vs secundário impacta vacância e reavaliação | Prospecto do fundo (PDF) |
-| **IFIX composição e retorno total** | Benchmark padrão do mercado | Fonte B3 paga ou scraping |
-| **Distribuições efetivamente pagas** | CVM reporta `rendimentos_a_distribuir` (intenção), não confirmação | Extratos de corretoras |
+| **Taxa de vacância** | Principal driver de risco em FIIs de tijolo | Resolvível via PDF (ver seção 9) |
+| **Perfil de vencimento de contratos** | Quando os aluguéis vencem e precisam ser renovados | Resolvível via PDF |
+| **Localização e qualidade dos ativos** | Imóvel prime vs secundário impacta vacância e reavaliação | Resolvível via PDF |
+| **IFIX composição e retorno total** | Benchmark padrão do mercado | Permanece bloqueado (B3 paga) |
+| **Distribuições efetivamente pagas** | CVM reporta intenção, não confirmação | Permanece bloqueado (extratos de corretoras) |
 
-Essas lacunas definem o teto de análise puramente quantitativa da ferramenta. Para FIIs de tijolo, a análise qualitativa dos relatórios gerenciais (vacância, contratos, localização) permanece indispensável e fora do escopo de automação com dados públicos estruturados.
+Os três primeiros itens eram considerados bloqueados por estarem em PDFs não estruturados. Com parsing via Claude API, passam a ser tratáveis — com a restrição de escopo descrita na seção 9.
 
 ---
 
 ## 7. Avaliação geral — estado atual após M4
+
+> As notas abaixo refletem o estado pós-M4. A seção 9 detalha o plano para M5.
 
 | Dimensão | Nota | Nota anterior (pré-M4) | Evolução |
 |---|---|---|---|
@@ -230,13 +232,436 @@ A ferramenta passou de "boa para coleta e histórico" para "suficiente para aná
 
 3. **Projeção de renda futura:** `income` mostra o passado; o investidor de renda precisa do futuro projetado para planejamento de fluxo de caixa.
 
-### Sugestão para M5
+### O que M5 deve resolver antes de qualquer GUI
 
-Se M5 for uma interface gráfica, os itens P0 acima devem ser resolvidos primeiro — uma GUI sobre um backend com lacunas analíticas apenas empacota os problemas. A sequência recomendada antes de qualquer GUI:
+1. P0.1 — Watchlist → alerts (trivial)
+2. P0.2 — Projeção de renda futura (simples)
+3. P0.3 — Análise de segmento (média)
+4. P0.4 — Enriquecimento via PDF com Claude API (complexo, alto impacto)
 
-1. **Análise de segmento** — `segment` command com médias, rankings e comparação automática
-2. **Watchlist → alerts** — integração de 5 linhas em `alertas.py`
-3. **`income --projecao N`** — projeção de renda futura baseada em DY histórico
-4. **Pesos do score via CLI** — `--peso-dy`, `--peso-pvp` no `screen`
+O plano detalhado de cada um está na seção 9.
 
-Depois dessas quatro adições, a ferramenta seria genuinamente autossuficiente para as seis fases do fluxo analítico.
+---
+
+## 9. Plano de implementação — M5
+
+### Princípio de escopo
+
+Nenhuma das features abaixo roda sobre todos os ~500 FIIs do banco. O escopo é sempre **carteira ativa + watchlist** — no máximo 15-20 fundos. Isso mantém custo, tempo de execução e ruído de dados sob controle.
+
+---
+
+### P0.1 — Alerta de preço-alvo da watchlist
+
+**Complexidade:** trivial (~30 min)  
+**Arquivo:** `src/portfolio/alertas.py`
+
+A watchlist já tem `preco_alvo` por ticker. O `alerts` já tem a infraestrutura de alertas. Falta conectar os dois.
+
+**Mudança necessária em `alertas.py`:**
+
+```python
+from src.storage.database import get_watchlist
+
+def _check_watchlist_targets(ind_map: dict) -> list[Alerta]:
+    alertas = []
+    for item in get_watchlist():
+        if not item.get("preco_alvo"):
+            continue
+        ticker = item["ticker"]
+        r = ind_map.get(ticker, {})
+        preco = r.get("preco")
+        if preco and pd.notna(preco) and float(preco) <= float(item["preco_alvo"]):
+            dist = (float(preco) / float(item["preco_alvo"]) - 1) * 100
+            alertas.append(Alerta(
+                nivel="oportunidade",
+                ticker=ticker,
+                tipo="preco_alvo_watchlist",
+                mensagem=(
+                    f"Preco R${preco:.2f} atingiu alvo R${item['preco_alvo']:.2f} "
+                    f"({dist:+.1f}%)  —  {item.get('obs') or ''}"
+                ),
+            ))
+    return alertas
+```
+
+Adicionar chamada de `_check_watchlist_targets(ind_map)` dentro de `check_alerts()`. O `ind_map` já é construído para os tickers da carteira — basta expandir para incluir os tickers da watchlist.
+
+**Output esperado:**
+```
+[OPRTND]  HGCR11  preco_alvo_watchlist  Preco R$91.80 atingiu alvo R$92.00 (-0.2%) — DY em queda, aguardar P/VP minimo
+```
+
+---
+
+### P0.2 — Projeção de renda futura
+
+**Complexidade:** baixa (~2h)  
+**Arquivos:** `src/portfolio/relatorio.py`, `main.py`
+
+**Lógica:**
+1. Para cada posição ativa em `get_posicoes()`, pegar o DY médio dos últimos 6 meses via `get_historico_dividendos()`
+2. Projetar: `dividendo_mensal_est = cotas × preco_atual × dy_med_6m / 100`
+3. Somar por mês para os próximos N meses
+4. Exibir como tabela separada do histórico, claramente rotulada como estimativa
+
+**Mudança em `relatorio_income()`:**
+
+```python
+def relatorio_income(meses: int = 12, projecao: int = 0) -> None:
+    # ... (código atual do histórico) ...
+
+    if projecao > 0:
+        posicoes = get_posicoes()
+        hist = get_historico_dividendos()
+
+        projecao_mensal = 0.0
+        for _, pos in posicoes.iterrows():
+            t = pos["ticker"]
+            sub = hist[hist["ticker"] == t].dropna(subset=["dividendo_recebido"])
+            dy_med = sub.tail(6)["dividendo_recebido"].mean() if len(sub) >= 3 else None
+            if dy_med:
+                projecao_mensal += dy_med
+
+        console.print(f"\n[bold]Projecao (proximos {projecao} meses) [dim]— estimativa baseada nos ultimos 6 meses[/dim][/bold]")
+        pt = Table(show_header=True, header_style="bold")
+        pt.add_column("Mes",   width=8)
+        pt.add_column("Renda est.", justify="right", width=13)
+        pt.add_column("", width=25)
+
+        import datetime as dt
+        from dateutil.relativedelta import relativedelta
+        hoje = dt.date.today().replace(day=1)
+        for i in range(1, projecao + 1):
+            mes = (hoje + relativedelta(months=i)).strftime("%Y-%m")
+            barra_len = max(1, int(projecao_mensal / monthly["renda"].max() * 25)) if not monthly.empty else 10
+            pt.add_row(mes, f"R$ {projecao_mensal:,.2f}", "[dim]" + "#" * barra_len + "[/dim]")
+        console.print(pt)
+        console.print(f"[dim]Total estimado {projecao}m: R$ {projecao_mensal * projecao:,.2f}[/dim]")
+```
+
+**Novo parâmetro no CLI:**
+```bash
+python main.py portfolio income --meses 12 --projecao 6
+```
+
+**Limitação a comunicar ao usuário:** a projeção assume DY constante. Não prevê cortes de distribuição, novas compras, vendas ou variação de preço. É um piso de expectativa, não uma promessa.
+
+---
+
+### P0.3 — Análise de segmento
+
+**Complexidade:** média (~4h)  
+**Arquivos:** `src/analysis/indicadores.py` (nova função), `main.py` (novo comando)
+
+**Nova função em `indicadores.py`:**
+
+```python
+def get_segment_summary() -> pd.DataFrame:
+    """
+    Agrega indicadores por segmento.
+    Retorna: segmento, n_fiis, dy_mediano, pvp_mediano,
+             spread_mediano, liq_mediana, melhor_ticker, melhor_score
+    """
+    from src.analysis.screener import screen
+    df = screen(top_n=9999, liq_min=100_000)   # todos com liquidez mínima
+    if df.empty:
+        return pd.DataFrame()
+
+    agg = (
+        df.groupby("segmento")
+        .agg(
+            n_fiis       = ("ticker",       "count"),
+            dy_mediano   = ("dy_12m",       "median"),
+            pvp_mediano  = ("p_vp",         "median"),
+            spread_med   = ("spread_selic", "median"),
+            liq_mediana  = ("liquidez_30d", "median"),
+            melhor_score = ("score",        "max"),
+        )
+        .reset_index()
+    )
+    # Ticker com maior score por segmento
+    best = df.loc[df.groupby("segmento")["score"].idxmax(), ["segmento", "ticker"]]
+    agg = agg.merge(best.rename(columns={"ticker": "melhor_ticker"}), on="segmento")
+    return agg.sort_values("dy_mediano", ascending=False).reset_index(drop=True)
+```
+
+**Novo comando `segment` em `main.py`:**
+
+```bash
+python main.py segment           # visao geral de todos os segmentos
+python main.py segment logistica  # detalha os FIIs de logistica com rankings
+```
+
+Saída do `segment` (visão geral):
+```
+Segmento           FIIs  DY med  P/VP med  Spread   Liq med    Melhor
+Papel/CRI            45   11.2%     0.97   -1.7%   R$ 2.1M   KNCR11
+Logistica            28    8.4%     0.93   -4.5%   R$ 3.8M   HGLG11
+Shoppings            22    7.8%     0.87   -5.1%   R$ 5.2M   VISC11
+Lajes corp.          18    7.1%     0.82   -5.8%   R$ 1.9M   KNRI11
+Residencial          12    6.9%     0.79   -6.0%   R$ 0.4M   ALZR11
+```
+
+Saída do `segment logistica` (detalhe):
+```
+python main.py segment logistica --top 10
+# = screener filtrado + compare automático dos top 5
+```
+
+Internamente, `segment NOME --top N` chama `screen(segmento=NOME, top_n=N)` e exibe com a tabela já existente do screener. Zero código novo além da agregação.
+
+---
+
+### P0.4 — Enriquecimento via PDF + Claude API
+
+**Complexidade:** alta (~2 dias)  
+**Impacto:** resolve as três lacunas estruturais mais críticas (vacância, contratos, qualidade)  
+**Escopo:** apenas carteira + watchlist — nunca todos os FIIs
+
+#### Visão geral do fluxo
+
+```
+portfolio enrich [TICKER]
+       │
+       ├─ 1. Resolve tickers da carteira + watchlist
+       │
+       ├─ 2. Para cada ticker:
+       │       a. Busca CNPJ no banco (tabela fiis)
+       │       b. Consulta FundosNet API → URL do último relatório gerencial
+       │       c. Verifica cache: já extraído esse mês? → pula
+       │       d. Baixa o PDF
+       │       e. Envia ao Claude API com prompt estruturado
+       │       f. Armazena resultado na tabela relatorio_gerencial
+       │
+       └─ 3. Exibe resumo do que foi extraído
+```
+
+#### 4a. Nova fonte: FundosNet
+
+A B3 mantém o FundosNet, repositório público de todos os documentos de FIIs. Já está documentado no ROADMAP. A API é pública, sem autenticação:
+
+```
+GET https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentosDados
+  ?d=1
+  &a[tipoFundo]=FII
+  &a[cnpj]=<CNPJ_SEM_FORMATACAO>
+  &a[tipoDocumento]=GER           ← Relatório Gerencial
+  &o[0][id]=desc                  ← mais recente primeiro
+  &l=1                            ← apenas 1 resultado
+```
+
+Retorna JSON com `data[0].id` e `data[0].dataReferencia`. O PDF está em:
+```
+GET https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id=<ID>
+```
+
+**Arquivo:** `src/collectors/fundosnet_relatorio.py`
+
+```python
+import requests
+
+FUNDOSNET_API = "https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentosDados"
+FUNDOSNET_DOC = "https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento"
+
+def buscar_ultimo_relatorio(cnpj: str) -> dict | None:
+    """
+    Retorna {"id": ..., "data_referencia": ..., "descricao": ...} ou None.
+    """
+    resp = requests.get(FUNDOSNET_API, params={
+        "d": 1,
+        "a[tipoFundo]": "FII",
+        "a[cnpj]": cnpj,
+        "a[tipoDocumento]": "GER",
+        "o[0][id]": "desc",
+        "l": 1,
+    }, timeout=15)
+    resp.raise_for_status()
+    data = resp.json().get("data", [])
+    return data[0] if data else None
+
+def baixar_pdf(doc_id: int) -> bytes:
+    """Baixa o PDF do documento e retorna os bytes brutos."""
+    resp = requests.get(FUNDOSNET_DOC, params={"id": doc_id}, timeout=30)
+    resp.raise_for_status()
+    return resp.content
+```
+
+#### 4b. Integração com Claude API
+
+**Arquivo:** `src/analysis/pdf_enrichment.py`
+
+```python
+import base64
+import json
+import anthropic
+
+EXTRACTION_PROMPT = """
+Você é um analista especializado em FIIs brasileiros. Leia o relatório gerencial
+e extraia as informações abaixo. Responda APENAS com JSON válido, sem texto adicional.
+
+{
+  "vacancia_fisica_pct":       <número com 1 decimal ou null>,
+  "vacancia_financeira_pct":   <número com 1 decimal ou null>,
+  "contratos_venc_12m_pct":    <% do ABL ou PL com vencimento em 12 meses, ou null>,
+  "contratos_venc_24m_pct":    <idem 24 meses>,
+  "contratos_venc_36m_pct":    <idem 36 meses>,
+  "tipo_contrato_dominante":   "atipico" | "tipico" | "misto" | null,
+  "top_locatarios":            ["nome1", "nome2", "nome3"] ou [],
+  "resumo_gestor":             "<1 frase objetiva sobre o tom e destaques do relatório>",
+  "alertas":                   ["<risco ou evento relevante mencionado>", ...]
+}
+
+Se o fundo for de papel (CRI/LCI) e não tiver vacância ou contratos de locação física,
+retorne os campos de vacância e ABL como null e foque em contratos_venc e locatarios
+(substitua locatarios por devedores/emissores dos CRIs).
+"""
+
+def extrair_dados_pdf(pdf_bytes: bytes, modelo: str = "claude-haiku-4-5-20251001") -> dict:
+    """
+    Envia o PDF ao Claude API e retorna os dados extraídos como dict.
+    Lança exceção em caso de falha de parse ou API error.
+    """
+    client = anthropic.Anthropic()   # usa ANTHROPIC_API_KEY do ambiente
+    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+
+    msg = client.messages.create(
+        model=modelo,
+        max_tokens=1024,
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": pdf_b64,
+                    },
+                },
+                {"type": "text", "text": EXTRACTION_PROMPT},
+            ],
+        }],
+    )
+    return json.loads(msg.content[0].text)
+```
+
+**Custo estimado:**
+- Relatório gerencial típico: 500 KB a 2 MB → ~30k-120k tokens de input
+- Claude Haiku: ~$0,25/M input tokens
+- Por relatório: **R$0,04 a R$0,15**
+- Para 15 fundos/mês: **< R$2,50/mês**
+
+Se a extração falhar o parse JSON (relatório incomum, tabela mal formatada), retentar uma vez com `claude-sonnet-4-6` antes de registrar como erro.
+
+#### 4c. Schema de armazenamento
+
+```sql
+CREATE TABLE IF NOT EXISTS relatorio_gerencial (
+    cnpj                    TEXT NOT NULL,
+    ticker                  TEXT,
+    competencia             TEXT NOT NULL,   -- YYYY-MM do relatório
+    data_referencia         TEXT,            -- data de publicação no FundosNet
+    vacancia_fisica         REAL,            -- %
+    vacancia_financeira     REAL,            -- %
+    contratos_venc_12m      REAL,            -- % ABL/PL
+    contratos_venc_24m      REAL,
+    contratos_venc_36m      REAL,
+    tipo_contrato           TEXT,            -- "atipico" | "tipico" | "misto"
+    top_locatarios          TEXT,            -- JSON array
+    resumo_gestor           TEXT,
+    alertas                 TEXT,            -- JSON array
+    extraido_em             TEXT NOT NULL,   -- ISO-8601 timestamp
+    modelo_claude           TEXT NOT NULL,
+    PRIMARY KEY (cnpj, competencia)
+);
+```
+
+Adicionada ao `_SCHEMA` e `_migrate()` em `database.py`.
+
+#### 4d. Comando CLI
+
+```bash
+# Enriquece todos os fundos da carteira + watchlist
+python main.py portfolio enrich
+
+# Apenas um fundo específico
+python main.py portfolio enrich HGLG11
+
+# Força re-extração mesmo que já exista no cache do mês
+python main.py portfolio enrich --force
+```
+
+**Comportamento de cache:** se `relatorio_gerencial` já tem um registro para `(cnpj, competencia)` do mês atual, pula sem chamar a API. Re-roda apenas se `--force` ou se o mês mudou.
+
+**Output do comando:**
+```
+Enriquecendo 7 fundos (carteira: 5, watchlist: 4, 2 em comum)...
+
+HGLG11  Baixando relatorio gerencial (fev/2026)... OK
+        Enviando ao Claude (haiku)... OK
+        Vacancia fisica: 2.1%  |  Venc 12m: 8.3%  |  Tipo: atipico
+        Alerta: "Contrato Ambev vence em ago/2026 — negociacao em andamento"
+
+VISC11  Baixando relatorio gerencial (fev/2026)... OK
+        Enviando ao Claude (haiku)... OK
+        Vacancia fisica: 4.8%  |  Venc 12m: 12.1%  |  Tipo: tipico
+        Alerta: "ABL em Campinas com 3 lojas desocupadas desde nov/2025"
+
+HGCR11  FundosNet: nenhum relatorio gerencial encontrado nos ultimos 60 dias
+        [pular — FII de papel nao publica relatorio gerencial regularmente]
+```
+
+#### 4e. Integração com `info`
+
+Após `portfolio enrich`, o comando `info TICKER` passa a exibir uma nova seção quando os dados existirem:
+
+```bash
+python main.py info HGLG11
+```
+
+```
+...seções existentes...
+
+Relatorio gerencial (fev/2026) — extraido por Claude haiku:
+  Vacancia fisica     2.1%
+  Vacancia financeira 1.8%
+  Venc. contratos 12m 8.3%  |  24m: 22.4%  |  36m: 41.7%
+  Tipo de contrato    Atipico (predominante)
+  Top locatarios      Ambev, DHL, GPA
+  Resumo do gestor    "Gestao destaca renovacao antecipada de 3 contratos e pipeline
+                       de 2 novas aquisicoes para o semestre."
+  Alertas             - Contrato Ambev vence em ago/2026 — negociacao em andamento
+```
+
+Se não houver dados: `[rode 'portfolio enrich HGLG11' para dados do relatorio gerencial]`
+
+---
+
+### Sequência de implementação recomendada
+
+| # | Item | Complexidade | Impacto | Prazo est. |
+|---|---|---|---|---|
+| 1 | P0.1 — Watchlist → alerts | 30 min | Alto (alerta passivo) | Sessão 1 |
+| 2 | P0.2 — `income --projecao` | 2h | Médio (planejamento de fluxo) | Sessão 1 |
+| 3 | P0.3 — Comando `segment` | 4h | Alto (Fase 3 descoberta) | Sessão 2 |
+| 4 | P0.4 — `portfolio enrich` (PDF+Claude) | 2 dias | Muito alto (rompe teto analítico) | Sessão 3-4 |
+
+P0.1 e P0.2 são pré-requisitos simples. P0.3 é independente. P0.4 depende de `ANTHROPIC_API_KEY` no ambiente e de ter rodado `update` recentemente (precisa dos CNPJs no banco).
+
+### Dependências externas para P0.4
+
+```
+anthropic>=0.40.0   # Claude API Python SDK — adicionar ao requirements.txt
+```
+
+Nenhuma outra dependência nova. O FundosNet é HTTP simples (mesmo `requests` já usado).
+
+A `ANTHROPIC_API_KEY` deve estar como variável de ambiente. O comando `enrich` deve checar sua existência e exibir instrução clara se ausente:
+
+```
+[red]ANTHROPIC_API_KEY nao encontrada.[/red]
+[dim]Defina a variavel de ambiente antes de rodar este comando:
+  Windows:  set ANTHROPIC_API_KEY=sk-ant-...
+  Linux:    export ANTHROPIC_API_KEY=sk-ant-...[/dim]
+```
