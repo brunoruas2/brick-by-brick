@@ -1,8 +1,16 @@
 # Case Study: Montando e Gerenciando uma Carteira de FIIs com Brick by Brick
 
-> **Cenário:** abril de 2026. SELIC em 12,93%. Juro alto comprime o valor dos imóveis e penaliza FIIs de tijolo, mas cria spread atraente para FIIs de papel. Tenho uma carteira montada ao longo de 4 anos e preciso decidir o que manter, o que trocar e o que comprar.
+> ⚠️ **DISCLAIMER — LEIA ANTES DE CONTINUAR**
 >
-> Todos os números abaixo são reais — extraídos diretamente do banco local com dados da CVM e B3.
+> Este documento é **exclusivamente educacional e ilustrativo**. A carteira, as operações, os preços de entrada e as decisões de compra e venda descritos abaixo são **fictícios** — criados para demonstrar o fluxo de uso da ferramenta Brick by Brick, e não representam recomendações de investimento.
+>
+> Os indicadores exibidos (DY, P/VP, PL, spread) foram gerados a partir de dados públicos da CVM e da B3 carregados em um banco local de demonstração, e **podem estar desatualizados, incompletos ou não refletir a situação atual dos fundos citados**. Nenhum número apresentado deve ser utilizado como base para decisões reais de investimento.
+>
+> **Investimentos em FIIs envolvem riscos**, incluindo perda de capital, oscilação de renda e liquidez limitada. Consulte um profissional certificado (CFP/CGA) antes de tomar qualquer decisão. Este projeto não é um serviço de consultoria financeira.
+
+---
+
+> **Cenário fictício:** abril de 2026. SELIC em 12,93%. Juro alto comprime o valor dos imóveis e penaliza FIIs de tijolo, mas cria spread atraente para FIIs de papel. Um investidor hipotético tem uma carteira montada ao longo de 4 anos e precisa decidir o que manter, o que trocar e o que comprar.
 
 ---
 
