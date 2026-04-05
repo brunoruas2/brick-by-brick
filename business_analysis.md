@@ -1,7 +1,8 @@
 # Brick by Brick — Análise de Negócio
 
 > Avaliação sob a perspectiva de um analista financeiro especializado em FIIs.  
-> Objetivo: identificar o que a ferramenta já resolve, onde ela falha e o que seria necessário para ela se tornar a **única ferramenta** de pesquisa e gestão de carteira.
+> Objetivo: identificar o que a ferramenta já resolve, onde ela falha e o que seria necessário para ela se tornar a **única ferramenta** de pesquisa e gestão de carteira.  
+> Última revisão: após conclusão de M4 (abril/2026).
 
 ---
 
@@ -9,240 +10,233 @@
 
 ### Fundação de dados
 - Coleta automatizada de **todas as fontes primárias** (CVM, B3, BCB) — sem dependência de terceiros que podem mudar HTML, cobrar API ou fechar
-- Histórico longo: inf_mensal desde qualquer ano (via `--desde-ano`), COTAHIST desde 1994
-- Dados diários de preço (B3) + dados mensais de DY/VPA/PL (CVM) + benchmarks (BCB)
+- Histórico longo configurável: `inf_mensal` e `cotahist` desde qualquer ano via `--desde-ano`
+- Pipeline idempotente — rodar `update` duas vezes não duplica dados
 
 ### Análise fundamental
-- Screener com score ponderado cobrindo os principais vetores: DY, spread vs SELIC, P/VP, liquidez, consistência de proventos
-- Indicadores calculados corretamente: DY 12m, spread vs SELIC, consistência (std. dev.)
-- Histórico de DY por fundo (13 meses)
+- Screener com score ponderado cobrindo DY, spread vs SELIC, P/VP, liquidez e consistência
+- **`info` agora entrega análise completa:** indicadores pontuais + histórico de DY + tendências MM6/MM12/MM24 + P/VP histórico (24 meses) + crescimento de PL e cotistas + composição de receita
+- `--yoc-alvo`: calcula o YoC projetado a um preço-alvo de entrada — elimina a calculadora do processo
 
 ### Gestão de carteira
 - Reconstrução fiel do histórico de posições a partir das movimentações
-- YoC mensal e acumulado — indicador mais honesto que DY bruto
-- Payback em meses — métrica prática de retorno do capital investido
-- Detecção e correção de grupamentos/desdobramentos — ponto diferencial importante; praticamente nenhuma ferramenta retail trata isso
+- **YoC e payback em meses** — mais honestos que DY bruto de qualquer site
+- **Detecção e correção de grupamentos/desdobramentos** — diferencial real; praticamente nenhuma ferramenta retail trata isso corretamente
+- **`portfolio allocation`**: concentração por ativo e segmento com barras visuais
+- **`portfolio income`**: histórico de renda mensal recebida com média, máximo e mínimo
+- **`portfolio watchlist`**: candidatos monitorados com preço-alvo e distância atual
+- Importação em lote via Excel; exportação de histórico para CSV/Excel
 - Relatório mensal com comparativo vs SELIC e IPCA
-- Importação em lote via Excel
 
 ---
 
 ## 2. Fluxo de trabalho de um analista de FIIs
 
-Um analista de FIIs tipicamente trabalha em seis fases. Abaixo mapeio onde a ferramenta cobre e onde há lacunas.
-
 ### Fase 1 — Triagem do universo
 **O que precisa:** filtrar ~500 FIIs para uma lista de 20-30 candidatos.
 
-| Critério | Situação atual |
+| Critério | Status |
 |---|---|
 | DY 12m, P/VP, liquidez, spread SELIC | ✅ Screener cobre |
-| Filtro por segmento | ✅ Cobre (parcial — string match) |
-| Filtro por tamanho (PL mínimo) | ❌ Não existe |
+| Filtro por segmento | ✅ `--segmento` (match parcial) |
+| Filtro por tamanho (PL mínimo) | ✅ `--pl-min` |
+| Excluir FIIs em liquidação/encerramento | ✅ Filtro por situação CVM |
 | Filtro por nr. de cotistas (liquidez indireta) | ❌ Não existe |
-| Excluir FIIs em liquidação/encerramento | ✅ Filtro por situação |
-| Peso ajustável no score por perfil de investidor | ❌ Só via código |
+| Pesos do score ajustáveis via CLI | ❌ Só via código (dict no `screener.py`) |
+| Ranking automático por segmento (sem precisar filtrar) | ❌ Não existe |
 
 ### Fase 2 — Análise individual de um candidato
 **O que precisa:** entender a qualidade e a tendência do fundo antes de comprar.
 
-| Critério | Situação atual |
+| Critério | Status |
 |---|---|
-| DY atual e histórico 12m | ✅ `info` e `compare` |
-| Tendência de DY (crescendo, estável, caindo) | ❌ Só vejo 13 meses lineares |
-| P/VP atual vs histórico do próprio fundo | ❌ Só P/VP pontual, sem contexto histórico |
-| Crescimento do PL (fundo está captando?) | ❌ Não existe |
-| Crescimento de cotistas (saúde do fundo) | ❌ Não existe |
-| Taxa de vacância | ❌ Não disponível na CVM — lacuna estrutural |
-| Distribuição de receitas (imoveis_renda, CRI, LCI) | ⚠️ Dados existem no banco mas não são exibidos no `info` |
-| Comparação com pares do mesmo segmento | ⚠️ `compare` existe mas exige saber os tickers manualmente |
+| DY atual e histórico 13 meses | ✅ `info` |
+| Tendência de DY (MM6/MM12/MM24) | ✅ `info` — sempre exibido |
+| P/VP atual vs histórico 24 meses | ✅ `info --pvp-hist` |
+| Crescimento do PL (fundo está captando?) | ✅ `info` — var. 12m/24m |
+| Crescimento de cotistas | ✅ `info` — var. 12m |
+| Composição de receita (imoveis, CRI, LCI) | ✅ `info` — últimos 3 meses |
+| YoC projetado a preço-alvo de entrada | ✅ `info --yoc-alvo` |
+| Comparação automática com pares do segmento | ❌ `compare` exige saber os tickers |
+| Taxa de vacância | ❌ Lacuna estrutural — CVM não publica dado estruturado |
+| Perfil de vencimento de contratos | ❌ Lacuna estrutural |
 
 ### Fase 3 — Análise do segmento
-**O que precisa:** entender qual segmento está barato/caro e bem/mal posicionado no ciclo.
+**O que precisa:** entender qual segmento está barato/caro no ciclo atual.
 
-| Critério | Situação atual |
+| Critério | Status |
 |---|---|
 | Média de DY por segmento | ❌ Não existe |
 | Média de P/VP por segmento | ❌ Não existe |
-| Melhores FIIs por segmento (ranking interno) | ❌ Não existe |
-| Comparação de segmentos vs SELIC | ❌ Não existe |
+| Ranking dos melhores FIIs por segmento | ❌ Não existe (apenas filtro `--segmento` no screener) |
+| Comparação DY do segmento vs SELIC | ❌ Não existe |
+| Evolução histórica de DY médio do segmento | ❌ Não existe |
+
+> **Esta fase continua sem cobertura.** É a maior lacuna restante para uso como ferramenta única de análise — um analista que não consegue avaliar o momento do segmento sem saber os tickers de cor ainda precisará de uma fonte externa.
 
 ### Fase 4 — Construção da carteira
-**O que precisa:** decidir tamanho de posição e concentração por segmento.
+**O que precisa:** decidir tamanho de posição e concentração.
 
-| Critério | Situação atual |
+| Critério | Status |
 |---|---|
 | Registrar compras e vendas | ✅ |
 | Ver P&L de capital | ✅ |
-| Ver YoC por posição | ✅ |
-| Concentração da carteira por segmento (%) | ❌ Não existe |
-| Concentração por ativo (% do capital total) | ❌ Não existe |
-| Peso alvo por segmento e desvio atual | ❌ Não existe |
-| Watchlist de candidatos (interesse mas não comprado) | ❌ Não existe |
+| Ver YoC por posição e acumulado | ✅ |
+| Concentração por segmento (% do capital) | ✅ `portfolio allocation` |
+| Concentração por ativo (% do capital total) | ✅ `portfolio allocation` |
+| Watchlist de candidatos | ✅ `portfolio watch / watchlist` |
+| Peso-alvo por segmento e desvio atual | ❌ Exibe atual, não compara com meta |
 
 ### Fase 5 — Monitoramento contínuo
-**O que precisa:** ser avisado quando algo mudar sem precisar rodar análises manuais.
+**O que precisa:** ser avisado quando algo mudar.
 
-| Critério | Situação atual |
+| Critério | Status |
 |---|---|
-| Alerta de P/VP alto | ✅ |
-| Alerta de DY abaixo da média | ✅ |
-| Alerta de spread negativo vs SELIC | ✅ |
-| Alerta de P&L em queda | ✅ |
-| Projeção de renda mensal (próximos 12 meses) | ❌ Não existe |
-| Calendário de pagamentos (qual mês cada FII costuma pagar) | ❌ Não existe |
-| Alerta de preço-alvo atingido (para compra ou venda) | ❌ Não existe |
+| Alerta de P/VP alto | ✅ `alerts` |
+| Alerta de DY abaixo da média | ✅ `alerts` |
+| Alerta de spread negativo vs SELIC | ✅ `alerts` |
+| Alerta de P&L em queda | ✅ `alerts` |
+| **Alerta de preço-alvo da watchlist atingido** | ❌ Watchlist existe mas não dispara alerta |
+| Histórico de renda mensal recebida | ✅ `portfolio income` |
+| **Projeção de renda futura** (próximos 12 meses) | ❌ `income` mostra histórico, não projeção |
 | Alerta de queda de PL (fundo encolhendo) | ❌ Não existe |
+| Calendário de pagamentos por FII | ❌ CVM não publica dado estruturado |
 
 ### Fase 6 — Reposicionamento
 **O que precisa:** decidir quando sair de um ativo e entrar em outro.
 
-| Critério | Situação atual |
+| Critério | Status |
 |---|---|
-| Comparar YoC da posição atual vs alternativa no mesmo segmento | ❌ Não existe |
+| Comparar YoC da posição atual vs alternativa no mesmo segmento | ❌ Processo manual — dois `info` separados |
 | Calcular ganho de DY líquido ao trocar de posição | ❌ Não existe |
-| Impacto tributário da venda (ganho de capital — isento para PF) | ⚠️ Não aplicável para PF, mas relevante para PJ |
+| Drawdown de renda (pior sequência de queda de proventos) | ❌ Não existe |
 
 ---
 
-## 3. Features críticas ausentes (P0 — bloqueadores)
+## 3. Features críticas ausentes após M4 (novo P0)
 
-Estas são as lacunas que impedem o uso da ferramenta como instrumento único de gestão:
+Com M4 concluído, os bloqueadores anteriores (watchlist, alocação, P/VP histórico) foram resolvidos. Os novos P0 são:
 
-### 3.1 Watchlist
-**Problema:** não há como monitorar candidatos antes de comprar. O analista precisa manter uma lista mental ou em planilha externa.
+### 3.1 Análise de segmento
+**Problema:** a Fase 3 permanece completamente descoberta. Um analista que não conhece os tickers de cor não consegue avaliar se logística está cara ou barata em relação a lajes ou shoppings sem recorrer a uma fonte externa.
 
-**Proposta:** tabela `watchlist` no banco com ticker, preço-alvo de entrada, motivo, data de adição. Comandos: `portfolio watch TICKER --preco-alvo 95 --obs "P/VP abaixo de 0.90"` e `portfolio watchlist`.
+**O que falta:**
+- Médias de DY e P/VP por segmento calculadas a partir do screener
+- Ranking interno de cada segmento (quais são os melhores FIIs de logística agora?)
+- `compare --segmento logistica --vs HGLG11` — compara automaticamente com os melhores pares
 
-**Impacto:** eliminaria a planilha de acompanhamento externa que todo investidor de FII mantém.
+**Complexidade:** média. Os dados já estão no banco — é questão de agregar `get_all_indicators()` por segmento.
 
-### 3.2 Concentração da carteira por segmento
-**Problema:** um portfólio de FIIs diversificado exige controle de exposição por segmento (logística, shoppings, lajes corporativas, papel, residencial). Hoje não há como ver isso.
+### 3.2 Alerta de preço-alvo da watchlist
+**Problema:** o investidor adiciona um FII à watchlist com preço-alvo de R$ 95, mas só descobre que o preço chegou lá se rodar `portfolio watchlist` manualmente. O valor da watchlist é exatamente o alerta passivo.
 
-**Proposta:** comando `portfolio allocation` exibindo:
-- % do capital total por segmento
-- % do capital total por ativo
-- Desvio de um target definido pelo usuário
+**Proposta:** integrar watchlist ao `alerts` — quando `preco_atual <= preco_alvo`, gerar alerta `[OPRTND]` com nível verde. Zero nova coleta necessária.
 
-### 3.3 Projeção de renda mensal
-**Problema:** o investidor de renda precisa saber quanto espera receber nos próximos meses. Hoje o relatório mostra "provento estimado do mês" mas sem projeção futura.
+**Complexidade:** baixa. A lógica já existe em `alertas.py`, basta adicionar a verificação contra `get_watchlist()`.
 
-**Proposta:** `portfolio income` — projeção para os próximos N meses usando a média dos últimos 6 meses de DY × cotas atuais. Exibir como tabela (mês a mês) e total anual esperado.
+### 3.3 Projeção de renda futura
+**Problema:** `portfolio income` mostra o que foi recebido (histórico). O investidor de renda precisa saber o que espera receber nos próximos meses — fundamental para planejamento de fluxo de caixa.
 
-### 3.4 Histórico de P/VP do fundo
-**Problema:** saber que HGLG11 está a P/VP 1.05 não diz nada sem saber se historicamente ele negocia a 0.90 ou 1.20. É a principal métrica de valuation para FIIs de tijolo.
+**Proposta:** `portfolio income --projecao 12` — usando a média dos últimos 6 meses de DY × cotas atuais, projeta os próximos N meses como estimativa. Deixar explícito que é estimativa baseada em DY histórico.
 
-**Proposta:** `portfolio pvp-history TICKER` — calcular P/VP mês a mês cruzando `cotacoes` (preco_fechamento_mensal) com `inf_mensal` (valor_patrimonial_cota) e exibir série histórica com média, mínimo e máximo.
+**Complexidade:** baixa. Os dados necessários já existem em `get_historico_dividendos()` e `get_posicoes()`.
 
 ---
 
-## 4. Features de alta prioridade ausentes (P1)
+## 4. Features de alta prioridade (P1)
 
-### 4.1 Tendência de DY (24-36 meses)
-O DY dos últimos 13 meses é insuficiente para classificar um fundo como "crescente", "estável" ou "declinante". Um FII que pagava 0.8%/mês há 3 anos e paga 0.65% hoje tem trajetória de queda — dado crítico para evitar.
+### 4.1 Comparação automática por segmento
+`compare HGLG11 XPLG11 BTLG11` exige saber os tickers. Um analista quer "me mostre os 5 melhores de logística e compare com HGLG11". Isso resolve a Fase 3 pelo lado da pesquisa.
 
-**Proposta:** no `info`, mostrar médias móveis de DY em 3 janelas: 6m, 12m, 24m. Tendência positiva = média 6m > média 12m > média 24m.
+**Proposta:** `compare --segmento logistica --vs HGLG11 --top 5`
 
-### 4.2 Crescimento do PL e de cotistas
-Fundos com PL crescente estão captando recursos e investindo — sinal de confiança do mercado. Fundos com PL encolhendo estão devolvendo capital ou em dificuldade.
+### 4.2 Pesos do score ajustáveis via CLI
+O score atual é fixo (DY 30% · Spread 25% · P/VP 20% · Liquidez 15% · Consistência 10%). Um investidor conservador em renda quer penalizar mais P/VP alto; um agressivo quer priorizar DY. Hoje isso exige editar `screener.py`.
 
-**Proposta:** no `info`, mostrar variação do PL em 12m e 24m. Variação de cotistas em 12m.
+**Proposta:** `screen --peso-dy 40 --peso-pvp 30 --peso-liq 15 --peso-spread 15` — rebalanceia dinamicamente.
 
-### 4.3 Comparação automática com pares do segmento
-Hoje `compare` exige saber os tickers manualmente. Um analista quer ver "me mostre os 5 melhores FIIs de logística e compare com HGLG11".
+### 4.3 Peso-alvo por segmento no `allocation`
+A ferramenta mostra onde o capital está hoje mas não compara com onde o analista quer que esteja. A informação de desvio ("quero 30% em logística, tenho 15%") é mais útil que a posição absoluta.
 
-**Proposta:** `compare --segmento logistica --vs HGLG11` — filtra os N melhores do segmento pelo score e exibe side-by-side.
+**Proposta:** arquivo de configuração simples (`carteira_config.json`) com pesos-alvo por segmento. O `allocation` exibiria coluna "Alvo", "Atual" e "Desvio" em cores.
 
-### 4.4 Análise de composição de receita
-Os dados de `imoveis_renda`, `cri`, `lci` já estão no banco mas não são expostos no CLI. Para FIIs de papel, a composição entre CRI e LCI impacta o perfil de risco. Para FIIs de tijolo, a % de imóveis vs caixa revela qualidade.
+### 4.4 Análise de drawdown de renda
+Qual foi o pior período de queda de proventos na carteira? Essencial para dimensionar reserva de emergência e validar a resiliência do portfólio.
 
-**Proposta:** adicionar seção "Composição de ativos" no `info` com os últimos 3 meses de `imoveis_renda`, `cri`, `lci`, `contas_receber_aluguel`.
-
-### 4.5 Ranking de segmento no screener
-**Proposta:** `screen --segmento logistica --ranking` — exibe apenas os FIIs do segmento, ranqueados, com o score explicado coluna por coluna.
-
-### 4.6 Export de dados
-Um analista frequentemente quer cruzar dados em Excel ou Python externo. Hoje não há como exportar.
-
-**Proposta:** flag `--export CSV` nos principais comandos (`screen`, `dividends`, `portfolio show`).
+**Proposta:** no `portfolio income`, identificar sequências consecutivas de queda e exibir o pior drawdown observado (em meses e em valor).
 
 ---
 
 ## 5. Features de média prioridade (P2)
 
 ### 5.1 Rendimento vs IFIX
-O IFIX é o índice de referência dos FIIs. Comparar a performance da carteira vs IFIX não é trivial pois o índice agrega preço + proventos (retorno total). Uma aproximação seria comparar DY acumulado da carteira vs DY médio ponderado do índice.
+O IFIX é o benchmark natural dos FIIs. Comparar a carteira vs IFIX sem dados oficiais estruturados é impreciso.
 
-**Limitação:** dados do IFIX não estão nas fontes primárias usadas. Seria necessário adicionar uma nova fonte de coleta.
+**Limitação permanente:** dados do IFIX não estão disponíveis via fontes primárias usadas. A única alternativa seria adicionar scraping do site da B3 — fora da política de fontes do projeto.
 
-### 5.2 Volatilidade da renda mensal
-O investidor de renda quer saber não só quanto recebe em média, mas quão previsível é esse recebimento. O desvio padrão mensal da renda recebida é uma métrica relevante.
+### 5.2 Calendário de pagamentos
+Alguns FIIs pagam no 15º dia útil, outros no último dia útil. Saber em que semana do mês esperar os créditos é relevante para gestão de fluxo de caixa.
 
-**Proposta:** no `portfolio dividends --resumo`, adicionar coluna "Volatilidade" (std. dev. dos dividendos mensais recebidos).
+**Limitação parcial:** a CVM não publica calendário estruturado. Seria possível inferir historicamente o padrão de pagamento a partir dos dados existentes, mas com imprecisão no mês vigente.
 
-### 5.3 Análise de drawdown de renda
-Qual foi a maior sequência de meses em que a renda caiu? Importante para dimensionar reserva de emergência.
+### 5.3 Análise de reposicionamento
+Dado que quero sair de HGLG11 e entrar em XPLG11, qual é o ganho líquido de YoC considerando o custo da operação (spread de bid/ask, corretagem)? Hoje é processo manual.
 
-**Proposta:** no `portfolio dividends`, identificar sequências de queda e exibir o pior período.
-
-### 5.4 Preço-alvo baseado em yield targeting
-Calcular o preço de entrada que entregaria um YoC-alvo desejado pelo usuário, dado o DY histórico do fundo.
-
-**Proposta:** `info HGLG11 --yoc-alvo 0.8` → "Para 0.8%/mês de YoC com o DY atual, o preço de entrada seria R$ X".
-
-### 5.5 Calendário de pagamentos
-Alguns FIIs pagam no 15º dia útil, outros no último dia do mês. O calendário permite saber em que semana do mês esperar os créditos.
-
-**Limitação:** a CVM não publica um calendário estruturado. Seria possível inferir historicamente (mês de pagamento vs mês de referência) a partir dos dados de `rendimentos_a_distribuir`, mas com imprecisão.
+**Proposta:** `compare HGLG11 XPLG11 --vs-carteira` — mostra YoC atual da posição vs YoC projetado na nova posição, dado o preço atual dos dois.
 
 ---
 
 ## 6. Lacunas estruturais de dados
 
-Estas lacunas **não podem ser resolvidas** com as fontes primárias atuais:
+Estas lacunas **não podem ser resolvidas** com as fontes primárias atuais — independente de quanto o sistema evolua:
 
 | Dado | Por que é importante | Fontes alternativas |
 |---|---|---|
 | **Taxa de vacância** | Principal driver de risco em FIIs de tijolo | Relatórios gerenciais dos gestores (PDF) — não estruturado |
 | **Perfil de vencimento de contratos** | Quando os aluguéis vencem e precisam ser renovados | Relatórios gerenciais |
 | **Localização e qualidade dos ativos** | Imóvel prime vs secundário impacta vacância e reavaliação | Prospecto do fundo (PDF) |
-| **IFIX composição e retorno total** | Benchmark padrão do mercado | Fonte B3 paga ou scraping do site |
+| **IFIX composição e retorno total** | Benchmark padrão do mercado | Fonte B3 paga ou scraping |
 | **Distribuições efetivamente pagas** | CVM reporta `rendimentos_a_distribuir` (intenção), não confirmação | Extratos de corretoras |
-| **Informes trimestrais e anuais** | Detalhes operacionais além do inf_mensal | CVM (disponível, mas formato PDF/XML diferente) |
+
+Essas lacunas definem o teto de análise puramente quantitativa da ferramenta. Para FIIs de tijolo, a análise qualitativa dos relatórios gerenciais (vacância, contratos, localização) permanece indispensável e fora do escopo de automação com dados públicos estruturados.
 
 ---
 
-## 7. Síntese — Roadmap sugerido para M4
+## 7. Avaliação geral — estado atual após M4
 
-Priorizando o menor esforço com maior impacto para um analista de FIIs:
+| Dimensão | Nota | Nota anterior (pré-M4) | Evolução |
+|---|---|---|---|
+| Qualidade dos dados | 9/10 | 9/10 | = |
+| Screener | 7/10 | 6/10 | +1 (pl-min, export; falta análise de segmento) |
+| Análise individual | 8/10 | 5/10 | +3 (P/VP hist, tendências, PL, composição) |
+| Gestão de carteira | 9/10 | 7/10 | +2 (allocation, income, watchlist, export) |
+| Monitoramento | 6/10 | 5/10 | +1 (watchlist existe; alerta de alvo ausente) |
+| Repositório de dados | 8/10 | 8/10 | = |
 
-### Bloco A — Análise (1-2 semanas)
-1. **P/VP histórico** — cruzar cotações mensais com VPA mensal (dados já no banco)
-2. **Tendência de DY 6m/12m/24m** — agregação simples dos dados existentes
-3. **Composição de receita no `info`** — apenas exibir `imoveis_renda`, `cri`, `lci`
-4. **Comparação automática por segmento** — `compare --segmento`
-
-### Bloco B — Portfolio (1-2 semanas)
-5. **Concentração por segmento** — `portfolio allocation`
-6. **Watchlist** — nova tabela + comandos `watch` / `watchlist`
-7. **Projeção de renda** — `portfolio income` projetando 12 meses
-
-### Bloco C — Refinamentos (1 semana)
-8. **Export CSV/Excel** — flag `--export` nos comandos principais
-9. **Crescimento de PL e cotistas no `info`**
-10. **Volatilidade da renda no sumário de dividendos**
+**Score médio: 7,8/10** (era 6,7/10 pré-M4)
 
 ---
 
-## 8. Avaliação geral
+## 8. Conclusão e próximos passos
 
-| Dimensão | Nota | Comentário |
-|---|---|---|
-| Qualidade dos dados | 9/10 | Fontes primárias, robusto, sem dependência frágil |
-| Screener | 6/10 | Funcional mas rígido — sem análise de segmento, sem P/VP histórico |
-| Análise individual | 5/10 | Falta tendência, composição de receita e P/VP histórico |
-| Gestão de carteira | 7/10 | YoC e payback são diferenciais reais; falta concentração e projeção |
-| Monitoramento | 5/10 | Alertas básicos mas sem watchlist e sem calendário de renda |
-| Repositório de dados | 8/10 | SQLite local é eficiente e portátil |
+### O que foi resolvido em M4
+A ferramenta passou de "boa para coleta e histórico" para "suficiente para análise individual completa". O `info` agora entrega em uma tela o equivalente ao que um analista profissional precisa para avaliar a qualidade de um fundo: preço, VPA, DY histórico com tendências, P/VP histórico, crescimento do PL, composição de receita e YoC projetado a diferentes preços de entrada. A gestão de carteira ficou robusta com allocation, income e watchlist.
 
-**Conclusão:** a ferramenta já supera a maioria das alternativas retail para quem quer dados confiáveis e histórico de dividendos ajustado por splits. O salto para "ferramenta única" exige principalmente três coisas: **watchlist**, **alocação por segmento** e **P/VP histórico**. Tudo isso é construtível com os dados já coletados — não há necessidade de novas fontes para os itens P0 e P1.
+### O que ainda impede o uso como ferramenta única
+
+1. **Análise de segmento (Fase 3 completamente descoberta):** um analista não pode avaliar o momento do ciclo de nenhum segmento sem dados agregados por segmento. Esta é a principal lacuna para o uso independente.
+
+2. **Watchlist sem alerta passivo:** a watchlist sem integração ao `alerts` é apenas uma lista — a proposta de valor real é o disparo automático quando o preço-alvo é atingido.
+
+3. **Projeção de renda futura:** `income` mostra o passado; o investidor de renda precisa do futuro projetado para planejamento de fluxo de caixa.
+
+### Sugestão para M5
+
+Se M5 for uma interface gráfica, os itens P0 acima devem ser resolvidos primeiro — uma GUI sobre um backend com lacunas analíticas apenas empacota os problemas. A sequência recomendada antes de qualquer GUI:
+
+1. **Análise de segmento** — `segment` command com médias, rankings e comparação automática
+2. **Watchlist → alerts** — integração de 5 linhas em `alertas.py`
+3. **`income --projecao N`** — projeção de renda futura baseada em DY histórico
+4. **Pesos do score via CLI** — `--peso-dy`, `--peso-pvp` no `screen`
+
+Depois dessas quatro adições, a ferramenta seria genuinamente autossuficiente para as seis fases do fluxo analítico.
