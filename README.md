@@ -157,10 +157,11 @@ openpyxl      # Excel template generation and import
 |-----------|-------|--------|
 | **M1 — Foundation** | Data collection (CVM + B3 + BCB) + SQLite storage | ✅ Complete |
 | **M2 — Analysis** | Indicators, screener, `info`, `compare` | ✅ Complete |
-| **M3 — Portfolio** | Position management, P&L, monthly report, alerts, scheduler | ✅ Complete |
-| **M4 — Interface** | GUI (web, desktop or dashboard) — scope TBD | ⬜ Future |
+| **M3 — Portfolio** | Positions, P&L, dividend history, split correction, alerts, scheduler | ✅ Complete |
+| **M4 — Deeper analysis** | Historical P/VP, DY trends, segment allocation, watchlist, income projection | 🔲 Next |
+| **M5 — Interface** | GUI (web or desktop) — scope TBD after M4 | 🔲 Future |
 
-See [ROADMAP.md](ROADMAP.md) for full details.
+See [ROADMAP.md](ROADMAP.md) for full details and [business_analysis.md](business_analysis.md) for the analytical gap assessment.
 
 ---
 
