@@ -146,5 +146,39 @@ def check_alerts(
                 mensagem=f"Score {r['score']:.0f} | DY 12m {dy} | P/VP {pvp} | {seg}",
             ))
 
+    # ------------------------------------------------------------------
+    # Alertas de watchlist: preco_alvo atingido
+    # ------------------------------------------------------------------
+    try:
+        from src.storage.database import get_watchlist
+        from src.analysis.indicadores import get_indicators_for
+
+        wl_items = get_watchlist()
+        if wl_items:
+            wl_tickers = [w["ticker"] for w in wl_items]
+            wl_ind = get_indicators_for(wl_tickers)
+            ind_map = {r["ticker"]: r for _, r in wl_ind.iterrows()} if not wl_ind.empty else {}
+
+            for item in wl_items:
+                tk   = item["ticker"]
+                alvo = item.get("preco_alvo")
+                if not alvo:
+                    continue
+                ind_r = ind_map.get(tk, {})
+                preco = ind_r.get("preco") if ind_r else None
+                if preco and pd.notna(preco) and float(preco) <= float(alvo):
+                    dist = (float(preco) / float(alvo) - 1) * 100
+                    alertas.append(Alerta(
+                        nivel="oportunidade",
+                        ticker=tk,
+                        tipo="preco_alvo_watchlist",
+                        mensagem=(
+                            f"Preco R$ {float(preco):.2f} atingiu alvo "
+                            f"R$ {float(alvo):.2f} ({dist:+.1f}%) -- watchlist"
+                        ),
+                    ))
+    except Exception:
+        pass  # watchlist opcional -- nao interrompe os demais alertas
+
     alertas.sort(key=lambda a: _ORDEM.get(a.nivel, 9))
     return alertas

@@ -312,7 +312,60 @@ Após registrar o evento, rode `portfolio dividends` para ver o histórico corri
 
 ---
 
-### 6. Backtest — simulações hipotéticas (what-if)
+### 6. Análise por segmento
+
+O comando `segment` responde "qual segmento está melhor hoje?" e "quais são os melhores fundos de logística?".
+
+```bash
+# Visão geral: medianas de DY, P/VP, spread e liquidez por segmento
+python main.py segment
+
+# Top 5 FIIs de logística ranqueados por score
+python main.py segment logistica
+
+# Top 10 de lajes corporativas com DY mínimo de 9%
+python main.py segment "lajes corporativas" --top 10 --dy-min 9
+```
+
+| Opção | Descrição |
+|---|---|
+| `--top N` | Número de FIIs a exibir no detalhe do segmento (padrão: 5) |
+| `--dy-min` | Filtro de DY 12m mínimo (%) |
+| `--pvp-max` | Filtro de P/VP máximo |
+
+---
+
+### 7. Enriquecimento via FundosNet + Claude API
+
+O comando `portfolio enrich` baixa o último relatório gerencial de cada fundo da carteira e watchlist, extrai dados não estruturados (vacância, contratos, locatários, alertas do gestor) via Claude Haiku, e salva no banco local.
+
+**Pré-requisitos:**
+```bash
+pip install anthropic>=0.40.0
+set ANTHROPIC_API_KEY=sk-ant-...   # Windows
+# export ANTHROPIC_API_KEY=sk-ant-...  # Linux/macOS
+```
+
+**Uso:**
+```bash
+# Enriquece toda a carteira + watchlist (pula fundos já processados no mês)
+python main.py portfolio enrich
+
+# Apenas um fundo
+python main.py portfolio enrich HGLG11
+
+# Força reprocessamento mesmo que já tenha dado do mês atual
+python main.py portfolio enrich --force
+```
+
+Após o enriquecimento, o comando `info` passa a exibir a seção "Relatorio gerencial" com vacância, principais locatários, contratos e alertas do gestor.
+
+**Custo estimado:** < R$ 2,50/mês para 15 fundos (Claude Haiku 3).  
+**Cache:** um processamento por fundo por mês. Re-usa os dados sem nova chamada à API.
+
+---
+
+### 8. Backtest — simulações hipotéticas (what-if)
 
 O módulo de backtest permite avaliar o impacto de decisões passadas hipotéticas na carteira: "e se eu tivesse feito X em tal mês?". É útil para comparar ativos e calibrar decisões futuras.
 
@@ -346,7 +399,7 @@ python main.py backtest add HGLG11 2024-01 --capital 16500
 
 ---
 
-### 7. Verificar alertas
+### 9. Verificar alertas
 
 ```bash
 # Alertas com limiares padrão
@@ -368,7 +421,7 @@ Tipos de alerta:
 
 ---
 
-### 7. Manter os dados atualizados
+### 10. Manter os dados atualizados
 
 #### Opção A — atualização manual
 
@@ -455,8 +508,12 @@ python main.py portfolio watchlist                                      # Watchl
 python main.py portfolio check-splits [TICKER]                          # Detecta splits não registrados
 python main.py portfolio add-split   TICKER YYYY-MM FATOR [--tipo T] [--obs S]
 
-python main.py alerts [opções]             # Alertas e oportunidades
-python main.py scheduler                   # Agendador automático (foreground)
+python main.py segment [NOME] [--top N] [--dy-min X] [--pvp-max X]    # Analise por segmento
+python main.py alerts [opções]             # Alertas e oportunidades (incl. watchlist preco-alvo)
+python main.py scheduler                   # Agendador automatico (foreground)
+
+python main.py portfolio income  [--meses N] [--projecao N]            # Renda + projecao futura
+python main.py portfolio enrich  [TICKER] [--force]                    # PDF+Claude: vacancia/contratos
 
 python main.py backtest swap TICKER_OUT TICKER_IN YYYY-MM [--cotas N]  # Simula troca entre FIIs
 python main.py backtest add  TICKER YYYY-MM [--cotas N | --capital R$]  # Simula compra adicional

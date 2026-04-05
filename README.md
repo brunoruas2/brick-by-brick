@@ -69,6 +69,13 @@ python main.py portfolio allocation            # capital allocation by ticker an
 python main.py portfolio income --meses 12     # monthly dividend income chart
 python main.py portfolio watch HGLG11 --preco-alvo 150  # add to watchlist
 python main.py portfolio watchlist             # show watchlist with live indicators
+python main.py portfolio income --projecao 6  # dividend income + 6-month projection
+python main.py portfolio enrich               # PDF enrichment via Claude API (vacancia, contracts)
+
+# 4b. Segment analysis
+python main.py segment                         # sector overview (median DY, P/VP, spread)
+python main.py segment logistica               # top FIIs in a specific sector
+python main.py segment logistica --top 10 --dy-min 9
 
 # 5. Backtest — what-if simulations
 python main.py backtest swap VISC11 HGLG11 2024-06          # if I had swapped VISC11 for HGLG11 in Jun/24?

@@ -340,6 +340,29 @@ def info(
             )
         console.print(cpt)
 
+    # Relatorio gerencial (enriquecimento via PDF + Claude)
+    from src.storage.database import get_relatorio_gerencial
+    row_f = df.iloc[0]
+    cnpj_fii = row_f.get("cnpj") if "cnpj" in df.columns else None
+    if cnpj_fii:
+        rg = get_relatorio_gerencial(str(cnpj_fii))
+        if rg:
+            console.print("\n[bold]Relatorio gerencial (extrato via IA):[/bold]")
+            rgt = Table(show_header=False, box=None, padding=(0, 2))
+            rgt.add_column("Label",  style="dim")
+            rgt.add_column("Valor",  style="bold")
+            rgt.add_row("Competencia", str(rg.get("competencia", "--")))
+            if rg.get("vacancia") is not None:
+                rgt.add_row("Vacancia",    f"{rg['vacancia']:.1f}%")
+            if rg.get("locatarios"):
+                rgt.add_row("Locatarios",  str(rg["locatarios"])[:120])
+            if rg.get("contratos"):
+                rgt.add_row("Contratos",   str(rg["contratos"])[:120])
+            if rg.get("alertas"):
+                rgt.add_row("Alertas",     str(rg["alertas"])[:120])
+            rgt.add_row("[dim]Fonte[/dim]", f"[dim]{str(rg.get('fonte_url',''))[:60]}[/dim]")
+            console.print(rgt)
+
     # Historico P/VP (opcional)
     if pvp_hist:
         pvp_df = get_pvp_history(ticker, months=24)
@@ -846,11 +869,13 @@ def portfolio_allocation():
 
 @portfolio_app.command("income")
 def portfolio_income(
-    meses: int = typer.Option(12, "--meses", "-m", help="Numero de meses a exibir."),
+    meses:    int = typer.Option(12, "--meses",    "-m", help="Numero de meses a exibir."),
+    projecao: int = typer.Option(0,  "--projecao", "-p",
+                                 help="Projeta os proximos N meses usando a media dos ultimos 6 reais."),
 ):
     """Exibe a renda mensal recebida em dividendos (grafico de barras no terminal)."""
     from src.portfolio.relatorio import relatorio_income
-    relatorio_income(meses=meses)
+    relatorio_income(meses=meses, projecao=projecao)
 
 
 @portfolio_app.command("watch")
@@ -953,6 +978,201 @@ def portfolio_watchlist():
         )
 
     console.print(t)
+
+
+@portfolio_app.command("enrich")
+def portfolio_enrich(
+    ticker: str  = typer.Argument(None, help="Ticker especifico (opcional). Padrao: toda a carteira + watchlist."),
+    forcar: bool = typer.Option(False, "--force", "-f", help="Reprocessa mesmo que ja haja dado do mes atual."),
+):
+    """
+    Enriquece relatorios gerenciais via FundosNet + Claude API.
+
+    Baixa o ultimo relatorio gerencial de cada fundo da carteira e watchlist,
+    extrai vacancia, contratos, locatarios e alertas do gestor, e armazena no banco.
+
+    Requer: pip install anthropic>=0.40.0  e  variavel ANTHROPIC_API_KEY definida.
+
+    Exemplos:
+        python main.py portfolio enrich
+        python main.py portfolio enrich HGLG11
+        python main.py portfolio enrich --force
+    """
+    from src.portfolio.enrich import enriquecer, EnrichError
+    from src.storage.database import init_db
+    init_db()
+
+    console.print(
+        "[bold cyan]Enriquecimento via FundosNet + Claude API[/bold cyan]"
+    )
+    console.print(
+        "[dim]Escopo: carteira ativa + watchlist. Cache: 1 relatorio por fundo por mes.[/dim]\n"
+    )
+
+    try:
+        resultados = enriquecer(ticker=ticker, forcar=forcar, verbose=False)
+    except Exception as e:
+        console.print(f"[red]Erro: {e}[/red]")
+        raise typer.Exit(code=1)
+
+    t = Table(show_header=True, header_style="bold")
+    t.add_column("Ticker",  style="cyan", width=8)
+    t.add_column("Status",               width=10)
+    t.add_column("Detalhe")
+
+    _CORES = {"ok": "green", "cache": "dim", "sem_pdf": "yellow", "erro": "red"}
+    _ICONS = {"ok": "ok", "cache": "cache", "sem_pdf": "sem PDF", "erro": "ERRO"}
+
+    for r in resultados:
+        cor   = _CORES.get(r["status"], "white")
+        label = _ICONS.get(r["status"], r["status"])
+        t.add_row(
+            r["ticker"],
+            f"[{cor}]{label}[/{cor}]",
+            str(r.get("mensagem", ""))[:80],
+        )
+
+    console.print(t)
+    n_ok = sum(1 for r in resultados if r["status"] == "ok")
+    n_cache = sum(1 for r in resultados if r["status"] == "cache")
+    console.print(
+        f"\n[dim]{n_ok} novo(s) processado(s), {n_cache} do cache. "
+        "Use 'python main.py info TICKER' para ver os dados extraidos.[/dim]"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Analise de segmento
+# ---------------------------------------------------------------------------
+
+@app.command()
+def segment(
+    nome:    str  = typer.Argument(None,  help="Filtro de segmento (parcial, ex: 'logistica'). Sem argumento: visao geral."),
+    top:     int  = typer.Option(5, "--top", "-t", help="Numero de FIIs a exibir por segmento."),
+    dy_min:  float = typer.Option(None,   "--dy-min",  help="Filtro DY 12m minimo (%)."),
+    pvp_max: float = typer.Option(None,   "--pvp-max", help="Filtro P/VP maximo."),
+):
+    """
+    Analisa FIIs por segmento de mercado.
+
+    Sem argumentos: visao geral com medianas de DY, P/VP, spread e liquidez por segmento.
+    Com nome de segmento: ranking dos melhores FIIs daquele segmento.
+
+    Exemplos:
+        python main.py segment
+        python main.py segment logistica
+        python main.py segment logistica --top 10
+        python main.py segment "lajes corporativas" --dy-min 9
+    """
+    import pandas as pd
+    from src.analysis.indicadores import get_all_indicators
+    from src.analysis.screener import _add_score, _DEFAULT_WEIGHTS
+
+    df = get_all_indicators()
+    if df.empty:
+        console.print("[yellow]Sem dados. Rode: python main.py update[/yellow]")
+        return
+
+    # Aplica filtros opcionais
+    if dy_min is not None:
+        df = df[df["dy_12m"].fillna(0) >= dy_min]
+    if pvp_max is not None:
+        df = df[df["p_vp"].fillna(999) <= pvp_max]
+
+    df["segmento"] = df["segmento"].fillna("Outros")
+
+    if nome:
+        # Modo detalhe: top FIIs do segmento
+        mask = df["segmento"].str.lower().str.contains(nome.lower(), na=False)
+        sub = df[mask].copy()
+        if sub.empty:
+            console.print(f"[yellow]Segmento '{nome}' nao encontrado ou sem FIIs com dados.[/yellow]")
+            return
+
+        segs_encontrados = sub["segmento"].unique().tolist()
+        seg_label = segs_encontrados[0] if len(segs_encontrados) == 1 else nome
+        console.print(f"\n[bold cyan]Segmento: {seg_label}[/bold cyan]  ({len(sub)} FIIs com dados)")
+
+        sub = _add_score(sub.copy(), _DEFAULT_WEIGHTS)
+        sub = sub.sort_values("score", ascending=False).head(top).reset_index(drop=True)
+
+        t = Table(show_header=True, header_style="bold", title=f"Top {len(sub)} -- {seg_label}")
+        t.add_column("#",         justify="right", width=3)
+        t.add_column("Ticker",    style="cyan",    width=8)
+        t.add_column("Preco",     justify="right", width=9)
+        t.add_column("P/VP",      justify="right", width=6)
+        t.add_column("DY 12m",    justify="right", width=8)
+        t.add_column("Spread",    justify="right", width=8)
+        t.add_column("Liq 30d",   justify="right", width=10)
+        t.add_column("Score",     justify="right", width=6)
+
+        for i, r in sub.iterrows():
+            t.add_row(
+                str(i + 1),
+                r["ticker"],
+                f"R$ {r['preco']:.2f}"       if pd.notna(r.get("preco"))         else "--",
+                f"{r['p_vp']:.2f}"           if pd.notna(r.get("p_vp"))          else "--",
+                f"{r['dy_12m']:.1f}%"        if pd.notna(r.get("dy_12m"))        else "--",
+                f"{r['spread_selic']:.1f}%"  if pd.notna(r.get("spread_selic"))  else "--",
+                _fmt_reais(r.get("liquidez_30d")),
+                f"{r['score']:.0f}"          if pd.notna(r.get("score"))         else "--",
+            )
+        console.print(t)
+
+        # Medianas do segmento para contexto
+        console.print("\n[dim]Medianas do segmento:[/dim]")
+        mt = Table(show_header=False, box=None, padding=(0, 2))
+        mt.add_column("Indicador", style="dim")
+        mt.add_column("Mediana", style="bold")
+        for col, label in [("dy_12m", "DY 12m"), ("p_vp", "P/VP"),
+                            ("spread_selic", "Spread vs SELIC"), ("consistencia_dy", "Consist. DY")]:
+            v = sub[col].median() if col in sub.columns else None
+            if pd.notna(v):
+                if col in ("dy_12m", "spread_selic", "consistencia_dy"):
+                    mt.add_row(label, f"{v:.2f}%")
+                else:
+                    mt.add_row(label, f"{v:.3f}")
+        console.print(mt)
+
+    else:
+        # Modo visao geral: uma linha por segmento com medianas
+        console.print("\n[bold]Analise por segmento[/bold]")
+
+        seg_stats = (
+            df.groupby("segmento")
+            .agg(
+                n_fiis=("ticker", "count"),
+                dy_med=("dy_12m", "median"),
+                pvp_med=("p_vp", "median"),
+                spread_med=("spread_selic", "median"),
+                liq_med=("liquidez_30d", "median"),
+            )
+            .reset_index()
+            .sort_values("dy_med", ascending=False)
+        )
+
+        t = Table(show_header=True, header_style="bold", title="Medianas por segmento")
+        t.add_column("Segmento",     width=28)
+        t.add_column("N",            justify="right", width=4)
+        t.add_column("DY 12m med",   justify="right", width=10)
+        t.add_column("P/VP med",     justify="right", width=9)
+        t.add_column("Spread med",   justify="right", width=10)
+        t.add_column("Liq med",      justify="right", width=11)
+
+        for _, r in seg_stats.iterrows():
+            t.add_row(
+                str(r["segmento"])[:28],
+                str(int(r["n_fiis"])),
+                f"{r['dy_med']:.1f}%"       if pd.notna(r.get("dy_med"))      else "--",
+                f"{r['pvp_med']:.3f}"       if pd.notna(r.get("pvp_med"))     else "--",
+                f"{r['spread_med']:.1f}%"   if pd.notna(r.get("spread_med"))  else "--",
+                _fmt_reais(r.get("liq_med")),
+            )
+        console.print(t)
+        console.print(
+            f"\n[dim]{len(seg_stats)} segmentos, {len(df)} FIIs com dados. "
+            "Para detalhar um segmento: python main.py segment <nome>[/dim]"
+        )
 
 
 # ---------------------------------------------------------------------------

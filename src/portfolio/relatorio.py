@@ -539,8 +539,13 @@ def relatorio_alocacao() -> None:
 # Renda mensal da carteira
 # ---------------------------------------------------------------------------
 
-def relatorio_income(meses: int = 12) -> None:
-    """Mostra a renda mensal gerada pela carteira nos ultimos N meses."""
+def relatorio_income(meses: int = 12, projecao: int = 0) -> None:
+    """
+    Mostra a renda mensal gerada pela carteira nos ultimos N meses.
+
+    projecao: se > 0, projeta os proximos N meses usando a media dos ultimos 6 meses
+              com dados reais. Claramente rotulado como estimativa.
+    """
     df = get_historico_dividendos()
 
     if df.empty:
@@ -563,11 +568,26 @@ def relatorio_income(meses: int = 12) -> None:
         console.print("[yellow]Sem dados de dividendos para exibir.[/yellow]")
         return
 
-    console.print(f"\n[bold]Renda mensal -- {len(monthly)} meses[/bold]")
+    # Calcula media dos ultimos 6 meses reais para projecao
+    media_proj = float(monthly.tail(6)["renda"].mean()) if len(monthly) >= 1 else 0.0
+    n_ativos_proj = int(monthly["n_ativos"].iloc[-1]) if not monthly.empty else 0
 
-    max_renda = monthly["renda"].max()
+    # Gera linhas de projecao
+    proj_rows: list[dict] = []
+    if projecao > 0 and media_proj > 0:
+        ultimo_mes = pd.Period(monthly["mes"].iloc[-1], freq="M")
+        for i in range(1, projecao + 1):
+            prox = str(ultimo_mes + i)
+            proj_rows.append({"mes": prox, "renda": media_proj, "n_ativos": n_ativos_proj, "projetado": True})
+
+    titulo = f"Renda mensal -- {len(monthly)} meses reais"
+    if projecao > 0:
+        titulo += f" + {projecao} projetados"
+    console.print(f"\n[bold]{titulo}[/bold]")
+
+    max_renda = max(monthly["renda"].max(), media_proj if proj_rows else 0)
     t = Table(show_header=True, header_style="bold")
-    t.add_column("Mes",    width=8)
+    t.add_column("Mes",    width=10)
     t.add_column("Ativos", justify="right", width=7)
     t.add_column("Renda",  justify="right", width=13)
     t.add_column("",                        width=30)
@@ -581,7 +601,24 @@ def relatorio_income(meses: int = 12) -> None:
             f"R$ {r['renda']:,.2f}",
             barra,
         )
+
+    for r in proj_rows:
+        barra_len = max(1, int(r["renda"] / max_renda * 30)) if max_renda > 0 else 1
+        barra = "[dim]" + "-" * barra_len + "[/dim]"
+        t.add_row(
+            f"[dim]{r['mes'][:7]}*[/dim]",
+            f"[dim]{r['n_ativos']}[/dim]",
+            f"[dim]R$ {r['renda']:,.2f}[/dim]",
+            barra,
+        )
+
     console.print(t)
+
+    if proj_rows:
+        console.print(
+            f"[dim]* Estimativa: media dos ultimos 6 meses reais (R$ {media_proj:,.2f}/mes). "
+            "Nao considera variacao de cotas ou DY.[/dim]"
+        )
 
     media   = monthly["renda"].mean()
     maxima  = monthly["renda"].max()
@@ -592,8 +629,13 @@ def relatorio_income(meses: int = 12) -> None:
     gt = Table(show_header=False, box=None, padding=(0, 2))
     gt.add_column("Label", style="dim")
     gt.add_column("Valor", style="bold")
-    gt.add_row("Media mensal",            f"R$ {media:,.2f}")
+    gt.add_row("Media mensal (real)",     f"R$ {media:,.2f}")
     gt.add_row("Melhor mes",              f"R$ {maxima:,.2f}")
     gt.add_row("Menor mes",               f"R$ {minima:,.2f}")
     gt.add_row(f"Total {len(monthly)}m",  f"R$ {total_r:,.2f}")
+    if projecao > 0 and media_proj > 0:
+        gt.add_row(
+            f"Projecao {projecao}m (estimativa)",
+            f"R$ {media_proj * projecao:,.2f}  (R$ {media_proj:,.2f}/mes)",
+        )
     console.print(gt)

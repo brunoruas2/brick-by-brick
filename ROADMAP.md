@@ -9,7 +9,7 @@
 | **M3 — Carteira** | Posições, P&L, dividendos históricos, splits, alertas, scheduler | ✅ Concluído |
 | **M4 — Aprofundamento analítico** | P/VP histórico, tendências, alocação por segmento, watchlist, projeção de renda | ✅ Concluído |
 | **M4b — Backtest** | Simulações hipotéticas: swap e compra adicional com comparativo real vs. simulado | ✅ Concluído |
-| **M5 — Enriquecimento analítico** | Análise de segmento, watchlist alerts, projeção de renda, PDF enrichment via Claude API | 🔲 Próximo |
+| **M5 — Enriquecimento analítico** | Análise de segmento, watchlist alerts, projeção de renda, PDF enrichment via Claude API | ✅ Concluído |
 | **M6 — Interface** | GUI web ou desktop — escopo a definir após M5 validado | 🔲 Futuro |
 
 ---

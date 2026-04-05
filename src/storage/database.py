@@ -139,6 +139,18 @@ CREATE TABLE IF NOT EXISTS watchlist (
     obs           TEXT,
     adicionado_em TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS relatorio_gerencial (
+    cnpj          TEXT NOT NULL,
+    competencia   TEXT NOT NULL,  -- YYYY-MM (mes de referencia do relatorio)
+    vacancia      REAL,           -- % de vacancia fisica reportada
+    contratos     TEXT,           -- resumo dos vencimentos de contratos (texto livre)
+    locatarios    TEXT,           -- top locatarios e % de receita (texto livre)
+    alertas       TEXT,           -- pontos de atencao mencionados pelo gestor
+    fonte_url     TEXT,           -- URL do PDF processado
+    extraido_em   TEXT NOT NULL,  -- ISO-8601 timestamp da extracao
+    PRIMARY KEY (cnpj, competencia)
+);
 """
 
 
@@ -166,6 +178,24 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 preco_alvo    REAL,
                 obs           TEXT,
                 adicionado_em TEXT NOT NULL
+            );
+        """)
+        conn.commit()
+    except Exception:
+        pass
+    # Cria tabela relatorio_gerencial (bancos criados antes desta versao)
+    try:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS relatorio_gerencial (
+                cnpj          TEXT NOT NULL,
+                competencia   TEXT NOT NULL,
+                vacancia      REAL,
+                contratos     TEXT,
+                locatarios    TEXT,
+                alertas       TEXT,
+                fonte_url     TEXT,
+                extraido_em   TEXT NOT NULL,
+                PRIMARY KEY (cnpj, competencia)
             );
         """)
         conn.commit()
@@ -426,6 +456,49 @@ def get_grupamentos(tickers: list[str]) -> list[dict]:
             tickers,
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def upsert_relatorio_gerencial(record: dict) -> None:
+    """
+    Insere ou atualiza um relatorio gerencial extraido via PDF+Claude.
+
+    Chaves obrigatorias: cnpj, competencia, extraido_em
+    Chaves opcionais:    vacancia, contratos, locatarios, alertas, fonte_url
+    """
+    sql = """
+        INSERT INTO relatorio_gerencial
+            (cnpj, competencia, vacancia, contratos, locatarios, alertas, fonte_url, extraido_em)
+        VALUES
+            (:cnpj, :competencia, :vacancia, :contratos, :locatarios, :alertas, :fonte_url, :extraido_em)
+        ON CONFLICT(cnpj, competencia) DO UPDATE SET
+            vacancia    = excluded.vacancia,
+            contratos   = excluded.contratos,
+            locatarios  = excluded.locatarios,
+            alertas     = excluded.alertas,
+            fonte_url   = excluded.fonte_url,
+            extraido_em = excluded.extraido_em
+    """
+    with connect() as conn:
+        conn.execute(sql, record)
+
+
+def get_relatorio_gerencial(cnpj: str, competencia: str | None = None) -> dict | None:
+    """
+    Retorna o relatorio gerencial mais recente de um CNPJ.
+    Se competencia for informada, retorna apenas aquele mes.
+    """
+    with connect() as conn:
+        if competencia:
+            row = conn.execute(
+                "SELECT * FROM relatorio_gerencial WHERE cnpj = ? AND competencia = ?",
+                (cnpj, competencia),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM relatorio_gerencial WHERE cnpj = ? ORDER BY competencia DESC LIMIT 1",
+                (cnpj,),
+            ).fetchone()
+    return dict(row) if row else None
 
 
 def link_tickers() -> int:
