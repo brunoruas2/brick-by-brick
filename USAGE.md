@@ -71,7 +71,9 @@ python main.py screen --help
 | `--liq-min` | Liquidez 30d mínima (R$) | `--liq-min 500000` |
 | `--spread-min` | Spread vs SELIC mínimo (%) | `--spread-min 2` |
 | `--segmento` | Filtro parcial de segmento | `--segmento logistica` |
+| `--pl-min` | Patrimônio líquido mínimo (R$) | `--pl-min 500000000` |
 | `--top` | Número de resultados | `--top 30` |
+| `--export` | Exportar resultado para CSV ou Excel | `--export resultado.csv` |
 
 ---
 

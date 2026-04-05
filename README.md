@@ -13,8 +13,6 @@
 [![Data Sources](https://img.shields.io/badge/Data-CVM%20%7C%20B3%20%7C%20BCB-orange?style=flat-square)](ROADMAP.md)
 [![Status](https://img.shields.io/badge/M1%20M2%20M3%20M4-Complete-brightgreen?style=flat-square)]()
 
-🇧🇷 [Leia em Português](README.pt-br.md)
-
 </div>
 
 ---
@@ -99,13 +97,18 @@ All of these are plain `requests.get()` calls — no authentication, no rate lim
 | NAV / VPA | CVM Informe Mensal | `Valor_Patrimonial_Cotas` |
 | Market price | B3 COTAHIST | `PREULT`, filter `CODBDI == "12"` |
 | **P/VP** | B3 ÷ CVM | Market price / NAV — calculated, not fetched |
+| **P/VP history** | B3 + CVM | Monthly series, 24-month window, with avg/min/max |
 | **DY 12m** | CVM | Sum of 12 monthly DY values (stored as decimal fraction, e.g. 0.0066 = 0.66%) |
+| **DY trend (MM6/12/24)** | CVM | Rolling means with direction signals — detects declining distributions |
 | **Spread vs SELIC** | CVM + BCB | DY 12m − SELIC accumulated 12m |
 | **Dividend history** | CVM + B3 | Monthly dividend per unit = DY × closing price; reconstructed from trade history |
+| **YoC (Yield on Cost)** | Portfolio | Dividend received ÷ acquisition cost — more honest than quoted DY |
+| **Payback** | Portfolio | Acquisition cost ÷ avg monthly dividend (last 6m) — in months |
 | Liquidity (30d avg) | B3 COTAHIST | `VOLTOT` 30-day mean |
 | DY consistency | CVM | Std. dev. of monthly DY — lower is more stable |
+| PL growth (12m/24m) | CVM | Net asset value variation — signals whether the fund is raising capital |
+| Revenue composition | CVM | CRI, LCI, real estate income as % of NAV (last 3 months) |
 | Admin fee | CVM Informe Mensal | `Percentual_Despesas_Taxa_Administracao` |
-| Portfolio composition | CVM Informe Mensal | CRI, LCI, real estate by type |
 | SELIC / CDI / IPCA | BCB SGS | Benchmark for return comparison |
 
 ---
@@ -119,23 +122,26 @@ brick-by-brick/
 │   │   ├── cvm_cadastro.py      # FII registry — cad_fi.csv
 │   │   ├── cvm_inf_mensal.py    # Monthly reports — DY, VPA, PL, composition
 │   │   ├── b3_cotahist.py       # Historical market prices — COTAHIST
-│   │   └── bcb_series.py        # SELIC, CDI, IPCA — BCB API SGS
+│   │   ├── bcb_series.py        # SELIC, CDI, IPCA — BCB API SGS
+│   │   └── cvm_inf_diario.py    # Daily NAV — collected, not yet used in production
 │   ├── storage/
 │   │   └── database.py          # SQLite schema, upserts, migrations
 │   ├── analysis/
-│   │   ├── indicadores.py       # P/VP, DY 12m, spread vs SELIC, consistency
-│   │   └── screener.py          # Filter and rank FIIs by weighted score
+│   │   ├── indicadores.py       # P/VP, DY trends, P/VP history, PL growth, composition
+│   │   └── screener.py          # Weighted score filter and ranking
 │   └── portfolio/
-│       ├── carteira.py          # Position management and P&L
-│       ├── relatorio.py         # Monthly portfolio report
+│       ├── carteira.py          # Position management, P&L, dividend history
+│       ├── relatorio.py         # Terminal reports: positions, allocation, income, dividends
 │       ├── alertas.py           # Alert checks and screener opportunities
 │       └── grupamentos.py       # Split/reverse-split detection and correction
 ├── data/                        # Local data — gitignored
 │   └── brickbybrick.sqlite      # SQLite database
 ├── main.py                      # CLI entry point (Typer)
 ├── requirements.txt
-├── ROADMAP.md                   # Full development plan
-└── USAGE.md                     # Usage guide and command reference
+├── ROADMAP.md                   # Full development plan and schema reference
+├── USAGE.md                     # Usage guide and command reference
+├── business_analysis.md         # Analyst workflow gap assessment and M5 plan
+└── CASE_STUDY.md                # End-to-end fictional use case (educational)
 ```
 
 ---
@@ -165,7 +171,8 @@ openpyxl      # Excel template generation and import
 | **M2 — Analysis** | Indicators, screener, `info`, `compare` | ✅ Complete |
 | **M3 — Portfolio** | Positions, P&L, dividend history, split correction, alerts, scheduler | ✅ Complete |
 | **M4 — Deeper analysis** | Historical P/VP, DY trends, segment allocation, watchlist, income projection | ✅ Complete |
-| **M5 — Interface** | GUI (web or desktop) — scope TBD after M4 | 🔲 Future |
+| **M5 — Analytical enrichment** | Segment analysis, watchlist alerts, income projection, PDF enrichment via Claude API | 🔲 Next |
+| **M6 — Interface** | GUI (web or desktop) — scope TBD after M5 | 🔲 Future |
 
 See [ROADMAP.md](ROADMAP.md) for full details and [business_analysis.md](business_analysis.md) for the analytical gap assessment.
 

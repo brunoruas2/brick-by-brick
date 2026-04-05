@@ -8,7 +8,8 @@
 | **M2 — Análise** | Indicadores, screener, `info`, `compare` | ✅ Concluído |
 | **M3 — Carteira** | Posições, P&L, dividendos históricos, splits, alertas, scheduler | ✅ Concluído |
 | **M4 — Aprofundamento analítico** | P/VP histórico, tendências, alocação por segmento, watchlist, projeção de renda | ✅ Concluído |
-| **M5 — Interface** | GUI web ou desktop — escopo a definir após M4 validado | 🔲 Futuro |
+| **M5 — Enriquecimento analítico** | Análise de segmento, watchlist alerts, projeção de renda, PDF enrichment via Claude API | 🔲 Próximo |
+| **M6 — Interface** | GUI web ou desktop — escopo a definir após M5 validado | 🔲 Futuro |
 
 ---
 
@@ -95,10 +96,56 @@
 
 | Dado | Motivo de exclusão |
 |---|---|
-| Taxa de vacância | Não disponível na CVM de forma estruturada — exige parsing de PDF (relatórios gerenciais) |
+| Taxa de vacância | Não disponível na CVM de forma estruturada — endereçado no M5 via PDF |
 | Perfil de vencimento de contratos | Idem |
 | IFIX retorno total | Fonte B3 paga ou scraping — fora da política de fontes primárias |
 | Dividendos efetivamente pagos vs provisionados | CVM reporta intenção, não confirmação — exigiria dados de corretoras |
+
+---
+
+## M5 — Enriquecimento analítico
+
+> Plano detalhado em `business_analysis.md` seção 9.
+
+### Escopo
+
+**Princípio:** nenhuma feature de M5 roda sobre todos os ~500 FIIs. Escopo restrito a **carteira ativa + watchlist** (~15 fundos).
+
+### P0.1 — Alerta de preço-alvo da watchlist
+
+Integração da watchlist ao `alerts`: quando `preco_atual <= preco_alvo`, gera alerta `[OPRTND]` automático. Mudança de ~10 linhas em `alertas.py`.
+
+### P0.2 — Projeção de renda futura
+
+Flag `--projecao N` no `portfolio income`: projeta os próximos N meses usando DY médio dos últimos 6 meses × cotas atuais. Claramente rotulado como estimativa.
+
+### P0.3 — Análise de segmento
+
+Novo comando `segment` com mediana de DY, P/VP, spread e liquidez por segmento, e ranking dos melhores fundos de cada categoria. Resolve a Fase 3 do fluxo analítico (hoje completamente descoberta).
+
+```bash
+python main.py segment              # visao geral de todos os segmentos
+python main.py segment logistica    # top FIIs do segmento com score
+```
+
+### P0.4 — Enriquecimento via PDF + Claude API
+
+Nova fonte: **FundosNet** (B3) — repositório público de relatórios gerenciais, acessível via API sem autenticação.
+
+Fluxo por fundo da carteira/watchlist:
+1. Consulta FundosNet pelo último relatório gerencial do CNPJ
+2. Baixa o PDF
+3. Envia ao Claude API (Haiku) com prompt estruturado
+4. Armazena vacância, contratos, top locatários e alertas em nova tabela `relatorio_gerencial`
+5. `info TICKER` passa a exibir esses dados quando disponíveis
+
+```bash
+python main.py portfolio enrich           # enriquece carteira + watchlist
+python main.py portfolio enrich HGLG11   # apenas um fundo
+```
+
+**Custo estimado:** < R$ 2,50/mês para 15 fundos.  
+**Nova dependência:** `anthropic>=0.40.0` + variável de ambiente `ANTHROPIC_API_KEY`.
 
 ---
 
