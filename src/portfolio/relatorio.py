@@ -370,31 +370,40 @@ def relatorio_dividendos(
     st.add_column("Meses",         justify="right", width=7)
     st.add_column("Recebido total",justify="right", width=14)
     st.add_column("YoC acum.",     justify="right", width=10)
-    st.add_column("Payback",       justify="right", width=9)
+    st.add_column("Payback est.",  justify="right", width=11)
 
-    total_recebido_geral = 0.0
-    total_custo_geral    = 0.0
+    total_recebido_geral  = 0.0
+    total_custo_geral     = 0.0
+    total_div_media_geral = 0.0
 
     for t in tickers:
         sub = df[df["ticker"] == t].dropna(subset=["dividendo_recebido"])
         if sub.empty:
             continue
 
-        custo_medio  = sub["custo_total"].iloc[-1]          # ultimo mes = posicao atual
+        custo_total  = sub["custo_total"].iloc[-1]           # ultimo mes = posicao atual
         meses        = len(sub)
         recebido     = sub["dividendo_recebido"].sum()
-        yoc_acum     = (recebido / custo_medio * 100) if custo_medio > 0 else None
-        payback      = (recebido / custo_medio * 100) if custo_medio > 0 else None
+        yoc_acum     = (recebido / custo_total * 100) if custo_total > 0 else None
 
-        total_recebido_geral += recebido
-        total_custo_geral    += custo_medio
+        # Payback em meses: custo_total / media dos ultimos 6 meses com dados
+        ultimos   = sub.tail(6)["dividendo_recebido"]
+        div_media = ultimos.mean() if len(ultimos) > 0 else None
+        if div_media and div_media > 0 and custo_total > 0:
+            payback_meses = custo_total / div_media
+        else:
+            payback_meses = None
 
-        yoc_str     = f"{yoc_acum:.2f}%"  if yoc_acum  is not None else "--"
-        payback_str = f"{payback:.1f}%"   if payback   is not None else "--"
+        total_recebido_geral  += recebido
+        total_custo_geral     += custo_total
+        total_div_media_geral += div_media if div_media else 0.0
+
+        yoc_str     = f"{yoc_acum:.2f}%"        if yoc_acum      is not None else "--"
+        payback_str = f"~{payback_meses:.0f} m"  if payback_meses is not None else "--"
 
         st.add_row(
             t,
-            f"R$ {custo_medio:,.2f}",
+            f"R$ {custo_total:,.2f}",
             str(meses),
             f"R$ {recebido:,.2f}",
             yoc_str,
@@ -407,14 +416,20 @@ def relatorio_dividendos(
     # Total geral
     # ------------------------------------------------------------------
     if total_custo_geral > 0:
-        payback_geral = total_recebido_geral / total_custo_geral * 100
+        yoc_geral = total_recebido_geral / total_custo_geral * 100
         console.print()
         gt = Table(show_header=False, box=None, padding=(0, 2))
         gt.add_column("Label", style="dim")
         gt.add_column("Valor", style="bold")
         gt.add_row("Total recebido em dividendos", f"R$ {total_recebido_geral:,.2f}")
         gt.add_row(
-            "Payback acumulado",
-            _color_pl(payback_geral - 0.001, f"{payback_geral:.2f}% do custo total recuperado"),
+            "YoC acumulado",
+            _color_pl(yoc_geral - 0.001, f"{yoc_geral:.2f}% do custo total recuperado"),
         )
+        if total_div_media_geral > 0:
+            payback_geral = total_custo_geral / total_div_media_geral
+            gt.add_row(
+                "Payback estimado",
+                f"~{payback_geral:.0f} meses ({payback_geral / 12:.1f} anos) no ritmo atual",
+            )
         console.print(gt)
