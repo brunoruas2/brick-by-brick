@@ -223,7 +223,41 @@ python main.py portfolio history HGLG11
 
 > A posição mensal é reconstruída a partir do histórico de compras e vendas — o relatório reflete exatamente quantas cotas você detinha em cada mês, ao preço médio vigente naquele momento.
 
-> **Nota sobre grupamentos de cotas:** se um fundo realizou grupamento (consolidação de cotas) durante o período, os meses anteriores ao evento mostrarão dividendos por cota menores, pois o CVM reporta o valor na unidade vigente à época. Isso é uma limitação de dados — sem um histórico de eventos corporativos não é possível normalizar os valores históricos automaticamente.
+---
+
+### 5b. Grupamentos e desdobramentos de cotas
+
+Alguns fundos realizam **grupamento** (reverse split: N cotas antigas → 1 nova) ou **desdobramento** (forward split: 1 cota → N novas). Sem registrar esses eventos, o histórico de dividendos ficaria distorcido.
+
+**Verificar se há anomalias na carteira:**
+
+```bash
+# Varre o histórico de cotas emitidas e aponta possíveis eventos não registrados
+python main.py portfolio check-splits
+
+# Restringir a busca a um ticker específico
+python main.py portfolio check-splits HGBS11
+```
+
+**Registrar um grupamento ou desdobramento confirmado:**
+
+```bash
+# Grupamento 10:1 — 10 cotas antigas viraram 1 nova (reverse split)
+python main.py portfolio add-split HGLG11 2021-10 10
+
+# Desdobramento 1:10 — 1 cota antiga virou 10 novas (forward split)
+python main.py portfolio add-split HGBS11 2025-05 10 --tipo desdobramento
+
+# Com observação livre
+python main.py portfolio add-split HGLG11 2021-10 10 --obs "Fato relevante 15/10/2021"
+```
+
+| Opção | Valores | Padrão |
+|---|---|---|
+| `--tipo` | `grupamento` \| `desdobramento` | `grupamento` |
+| `--obs` | Texto livre (fato relevante, fonte) | — |
+
+Após registrar o evento, rode `portfolio dividends` para ver o histórico corrigido. O custo total permanece inalterado — apenas as cotas e o preço médio são normalizados para refletir a quantidade correta em cada período.
 
 ---
 
@@ -327,8 +361,10 @@ python main.py portfolio template  [--output ARQUIVO]                # Gera temp
 python main.py portfolio import    ARQUIVO [--dry-run]               # Importa do Excel
 python main.py portfolio show                                        # Posições com P&L
 python main.py portfolio report    [--month YYYY-MM]                 # Relatório mensal
-python main.py portfolio dividends [--ticker T] [--desde YYYY-MM] [--resumo]  # Histórico de dividendos
-python main.py portfolio history   [TICKER]                          # Histórico de operações
+python main.py portfolio dividends   [--ticker T] [--desde YYYY-MM] [--resumo]  # Histórico de dividendos
+python main.py portfolio history     [TICKER]                                    # Histórico de operações
+python main.py portfolio check-splits [TICKER]                                   # Detecta grupamentos/desdobramentos nao registrados
+python main.py portfolio add-split   TICKER YYYY-MM FATOR [--tipo T] [--obs S]  # Registra evento de split
 
 python main.py alerts [opções]             # Alertas e oportunidades
 python main.py scheduler                   # Agendador automático (foreground)

@@ -122,7 +122,8 @@ brick-by-brick/
 │   └── portfolio/
 │       ├── carteira.py          # Position management and P&L
 │       ├── relatorio.py         # Monthly portfolio report
-│       └── alertas.py           # Alert checks and screener opportunities
+│       ├── alertas.py           # Alert checks and screener opportunities
+│       └── grupamentos.py       # Split/reverse-split detection and correction
 ├── data/                        # Local data — gitignored
 │   └── brickbybrick.sqlite      # SQLite database
 ├── main.py                      # CLI entry point (Typer)
