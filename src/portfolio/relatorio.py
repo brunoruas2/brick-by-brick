@@ -92,7 +92,7 @@ def show_posicoes() -> None:
             f"R$ {r['valor_atual']:,.2f}" if pd.notna(r.get("valor_atual")) else "--",
             pl_str,
             pct_str,
-            _fmt_pct(r.get("dy_mes")),
+            f"{r['dy_mes']*100:.2f}%" if pd.notna(r.get("dy_mes")) else "--",
         )
 
     console.print(t)

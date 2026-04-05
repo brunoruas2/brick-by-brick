@@ -73,11 +73,13 @@ def get_all_indicators() -> pd.DataFrame:
     selic_12m = selic_row["selic_12m"] if selic_row else None
 
     # --- Cadastro base ---
+    # Inclui FIIs com situacao NULL (vindos do inf_mensal, ainda nao linkados ao cadastro).
+    # Exclui apenas cancelados e em liquidacao.
     fiis_df = pd.read_sql("""
         SELECT cnpj, ticker, nome, segmento, gestor, taxa_adm, situacao
         FROM fiis
         WHERE ticker IS NOT NULL
-          AND situacao = 'EM FUNCIONAMENTO NORMAL'
+          AND (situacao = 'EM FUNCIONAMENTO NORMAL' OR situacao IS NULL)
     """, conn)
 
     conn.close()
@@ -86,13 +88,18 @@ def get_all_indicators() -> pd.DataFrame:
         return pd.DataFrame()
 
     # --- Calculos de DY em pandas (SQLite nao tem STDEV) ---
+    # dy_mes e armazenado como fracao decimal (0.007 = 0,7%/mes).
+    # Convertemos para percentual aqui para que dy_12m e dy_mes_atual estejam
+    # na mesma unidade que selic_12m (%), permitindo spread correto.
+    dy_df["dy_mes_pct"] = dy_df["dy_mes"] * 100
+
     dy_agg = (
         dy_df.sort_values("data_referencia")
         .groupby("cnpj")
         .agg(
-            dy_12m=("dy_mes", "sum"),
-            dy_mes_atual=("dy_mes", "last"),
-            consistencia_dy=("dy_mes", "std"),
+            dy_12m=("dy_mes_pct", "sum"),
+            dy_mes_atual=("dy_mes_pct", "last"),
+            consistencia_dy=("dy_mes_pct", "std"),
         )
         .reset_index()
     )

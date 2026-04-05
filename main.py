@@ -241,7 +241,7 @@ def info(ticker: str = typer.Argument(..., help="Ticker do FII (ex: HGLG11)")):
         htable.add_column("DY mes",  justify="right", width=8)
         htable.add_column("VPA",     justify="right", width=10)
         for _, hr in hist.iterrows():
-            dy  = f"{hr['dy_mes']:.2f}%"  if pd.notna(hr['dy_mes']) else "--"
+            dy  = f"{hr['dy_mes']*100:.2f}%"  if pd.notna(hr['dy_mes']) else "--"
             vpa = f"R$ {hr['vpa']:.2f}"   if pd.notna(hr['vpa'])    else "--"
             htable.add_row(str(hr['data_referencia'])[:7], dy, vpa)
         console.print(htable)
