@@ -11,7 +11,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Data Sources](https://img.shields.io/badge/Data-CVM%20%7C%20B3%20%7C%20BCB-orange?style=flat-square)](ROADMAP.md)
-[![Status](https://img.shields.io/badge/M1%20M2%20M3-Complete-brightgreen?style=flat-square)]()
+[![Status](https://img.shields.io/badge/M1%20M2%20M3%20M4-Complete-brightgreen?style=flat-square)]()
 
 🇧🇷 [Leia em Português](README.pt-br.md)
 
@@ -57,7 +57,9 @@ python main.py update
 python main.py screen --dy-min 9 --pvp-max 1.05
 
 # 3. Inspect a FII
-python main.py info HGLG11
+python main.py info HGLG11                    # indicators + DY history + trends + PL growth
+python main.py info HGLG11 --pvp-hist         # + 24-month P/VP chart
+python main.py info HGLG11 --yoc-alvo 150     # + YoC projected at R$ 150 entry price
 
 # 4. Build your portfolio — manually or via Excel import
 python main.py portfolio add HGLG11 100 165.50 2024-06-15
@@ -65,6 +67,10 @@ python main.py portfolio template              # generate carteira_template.xlsx
 python main.py portfolio import carteira.xlsx  # bulk import from Excel
 python main.py portfolio report                # monthly report (uses correct month's prices)
 python main.py portfolio dividends             # dividend history, YoC and payback
+python main.py portfolio allocation            # capital allocation by ticker and segment
+python main.py portfolio income --meses 12     # monthly dividend income chart
+python main.py portfolio watch HGLG11 --preco-alvo 150  # add to watchlist
+python main.py portfolio watchlist             # show watchlist with live indicators
 ```
 
 ---
@@ -158,7 +164,7 @@ openpyxl      # Excel template generation and import
 | **M1 — Foundation** | Data collection (CVM + B3 + BCB) + SQLite storage | ✅ Complete |
 | **M2 — Analysis** | Indicators, screener, `info`, `compare` | ✅ Complete |
 | **M3 — Portfolio** | Positions, P&L, dividend history, split correction, alerts, scheduler | ✅ Complete |
-| **M4 — Deeper analysis** | Historical P/VP, DY trends, segment allocation, watchlist, income projection | 🔲 Next |
+| **M4 — Deeper analysis** | Historical P/VP, DY trends, segment allocation, watchlist, income projection | ✅ Complete |
 | **M5 — Interface** | GUI (web or desktop) — scope TBD after M4 | 🔲 Future |
 
 See [ROADMAP.md](ROADMAP.md) for full details and [business_analysis.md](business_analysis.md) for the analytical gap assessment.

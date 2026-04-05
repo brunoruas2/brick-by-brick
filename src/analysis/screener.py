@@ -20,6 +20,7 @@ def screen(
     liq_min: float | None = None,
     spread_min: float | None = None,
     segmento: str | None = None,
+    pl_min: float | None = None,
     top_n: int = 20,
     weights: dict | None = None,
 ) -> pd.DataFrame:
@@ -53,6 +54,8 @@ def screen(
         df = df[df["spread_selic"].fillna(-999) >= spread_min]
     if segmento:
         df = df[df["segmento"].fillna("").str.lower().str.contains(segmento.lower())]
+    if pl_min is not None:
+        df = df[df["patrimonio_liquido"].fillna(0) >= pl_min]
 
     if df.empty:
         return df

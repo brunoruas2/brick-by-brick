@@ -7,7 +7,7 @@
 | **M1 — Fundação** | Coleta de dados primários (CVM + B3 + BCB) + storage SQLite | ✅ Concluído |
 | **M2 — Análise** | Indicadores, screener, `info`, `compare` | ✅ Concluído |
 | **M3 — Carteira** | Posições, P&L, dividendos históricos, splits, alertas, scheduler | ✅ Concluído |
-| **M4 — Aprofundamento analítico** | P/VP histórico, tendências, alocação por segmento, watchlist, projeção de renda | 🔲 Próximo |
+| **M4 — Aprofundamento analítico** | P/VP histórico, tendências, alocação por segmento, watchlist, projeção de renda | ✅ Concluído |
 | **M5 — Interface** | GUI web ou desktop — escopo a definir após M4 validado | 🔲 Futuro |
 
 ---
@@ -45,6 +45,9 @@
 | `history` | Log completo de movimentações |
 | `check-splits` | Detecção automática de grupamentos/desdobramentos não registrados |
 | `add-split` | Registra evento de split para correção histórica (tipo: grupamento/desdobramento) |
+| `allocation` | Alocação do capital por ativo e por segmento com proporções visuais |
+| `income` | Renda mensal histórica em dividendos com gráfico de barras |
+| `watch / watchlist` | Watchlist de candidatos com preço-alvo e indicadores ao vivo |
 
 - **YoC (Yield on Cost)**: dividendo recebido ÷ custo de aquisição — mais honesto que DY bruto
 - **Payback em meses**: custo total ÷ média mensal dos últimos 6 meses de dividendos
@@ -58,36 +61,35 @@
 
 ---
 
-## M4 — Aprofundamento analítico
+## M4 — Aprofundamento analítico ✅
 
 > Base da análise de negócio: `business_analysis.md`
 
-### Bloco A — Análise individual (dados já no banco, falta expor)
+### Bloco A — Análise individual
 
-| Feature | Comando proposto | Complexidade |
+| Feature | Comando | Status |
 |---|---|---|
-| **P/VP histórico** — série mensal com média, mín, máx | `info TICKER --pvp-hist` | Baixa |
-| **Tendência de DY** — médias móveis 6m/12m/24m | Adicionar ao `info` | Baixa |
-| **Crescimento de PL e cotistas** — variação 12m/24m | Adicionar ao `info` | Baixa |
-| **Composição de receita** — imoveis_renda, CRI, LCI nos últimos 3 meses | Adicionar ao `info` | Baixa |
-| **Comparação automática por segmento** — sem precisar saber os tickers | `compare --segmento logistica --vs HGLG11` | Média |
+| **P/VP histórico** — série mensal com média, mín, máx | `info TICKER --pvp-hist` | ✅ |
+| **Tendência de DY** — médias móveis MM6/MM12/MM24 | sempre no `info` | ✅ |
+| **Crescimento de PL e cotistas** — variação 12m/24m | sempre no `info` | ✅ |
+| **Composição de receita** — imóveis, CRI, LCI (% do PL, 3 meses) | sempre no `info` | ✅ |
+| **YoC projetado por preço-alvo** | `info TICKER --yoc-alvo PRECO` | ✅ |
 
-### Bloco B — Gestão de carteira (construção e monitoramento)
+### Bloco B — Gestão de carteira
 
-| Feature | Comando proposto | Complexidade |
+| Feature | Comando | Status |
 |---|---|---|
-| **Concentração por segmento** — % do capital por segmento e por ativo | `portfolio allocation` | Baixa |
-| **Watchlist** — monitorar candidatos sem comprar | `portfolio watch / watchlist` | Média |
-| **Projeção de renda** — renda estimada para os próximos N meses | `portfolio income [--meses 12]` | Média |
+| **Alocação por ativo e segmento** | `portfolio allocation` | ✅ |
+| **Watchlist** — monitorar candidatos sem comprar | `portfolio watch / watchlist` | ✅ |
+| **Renda mensal histórica** — gráfico de barras | `portfolio income [--meses N]` | ✅ |
 
 ### Bloco C — Screener e refinamentos
 
-| Feature | Descrição | Complexidade |
+| Feature | Implementação | Status |
 |---|---|---|
-| **Filtro por PL mínimo** | `--pl-min 500000000` | Baixa |
-| **Export CSV/Excel** | Flag `--export arquivo.csv` nos comandos principais | Média |
-| **Volatilidade da renda** | Std. dev. dos dividendos mensais no sumário | Baixa |
-| **Preço-alvo por YoC desejado** | `info TICKER --yoc-alvo 0.8` | Baixa |
+| **Filtro por PL mínimo** | `screen --pl-min` | ✅ |
+| **Export CSV/Excel** | `screen --export`, `dividends --export` | ✅ |
+| **Volatilidade da renda** | coluna "Vol. mensal" no sumário de dividendos | ✅ |
 
 ### O que NÃO entra no M4 (lacunas estruturais)
 
@@ -143,6 +145,7 @@ brick-by-brick/
 | `carteira` | Posições ativas/encerradas: cotas, preço médio, data_entrada |
 | `movimentacoes` | Histórico de compras e vendas |
 | `grupamentos` | Eventos de split/reverse split confirmados pelo usuário |
+| `watchlist` | FIIs monitorados: ticker, preço-alvo, observação |
 
 ---
 

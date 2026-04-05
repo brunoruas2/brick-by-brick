@@ -36,9 +36,10 @@ def get_all_indicators() -> pd.DataFrame:
         )
     """, conn)
 
-    # --- VPA mais recente (CVM) ---
+    # --- VPA e PL mais recentes (CVM) ---
     vpa_df = pd.read_sql("""
-        SELECT cnpj, valor_patrimonial_cota AS vpa, data_referencia AS data_vpa
+        SELECT cnpj, valor_patrimonial_cota AS vpa, data_referencia AS data_vpa,
+               patrimonio_liquido
         FROM inf_mensal
         WHERE (cnpj, data_referencia) IN (
             SELECT cnpj, MAX(data_referencia) FROM inf_mensal GROUP BY cnpj
@@ -128,6 +129,7 @@ def get_all_indicators() -> pd.DataFrame:
         "liquidez_30d",
         "selic_12m", "spread_selic",
         "consistencia_dy",
+        "patrimonio_liquido",
     ]
     return df[[c for c in cols if c in df.columns]].sort_values("ticker").reset_index(drop=True)
 
@@ -152,3 +154,143 @@ def get_dy_history(ticker: str, months: int = 12) -> pd.DataFrame:
     """, conn, params=(ticker.upper(), f"-{months}"))
     conn.close()
     return df
+
+
+def get_pvp_history(ticker: str, months: int = 24) -> pd.DataFrame:
+    """
+    Retorna serie mensal de P/VP: ultimo fechamento do mes (B3)
+    dividido pelo VPA de competencia (CVM inf_mensal).
+
+    Colunas: mes (YYYY-MM), vpa, preco, p_vp
+    """
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql("""
+        SELECT
+            strftime('%Y-%m', im.data_referencia) AS mes,
+            im.valor_patrimonial_cota             AS vpa,
+            cot.fechamento                        AS preco,
+            ROUND(cot.fechamento / im.valor_patrimonial_cota, 4) AS p_vp
+        FROM inf_mensal im
+        JOIN fiis f ON f.cnpj = im.cnpj
+        JOIN (
+            SELECT c.ticker,
+                   strftime('%Y-%m', c.data) AS mes,
+                   c.fechamento
+            FROM cotacoes c
+            INNER JOIN (
+                SELECT ticker, strftime('%Y-%m', data) AS mes, MAX(data) AS max_data
+                FROM cotacoes
+                WHERE ticker = ?
+                GROUP BY strftime('%Y-%m', data)
+            ) last ON c.ticker = last.ticker AND c.data = last.max_data
+        ) cot ON cot.ticker = f.ticker
+             AND cot.mes = strftime('%Y-%m', im.data_referencia)
+        WHERE f.ticker = ?
+          AND im.data_referencia >= date('now', ? || ' months')
+          AND im.valor_patrimonial_cota > 0
+        ORDER BY im.data_referencia
+    """, conn, params=(ticker.upper(), ticker.upper(), f"-{months}"))
+    conn.close()
+    return df
+
+
+def get_dy_trend(ticker: str, months: int = 24) -> tuple[pd.DataFrame, dict]:
+    """
+    Retorna serie de DY com medias moveis 6m/12m/24m e sinais de tendencia.
+
+    Retorna (df, sinais) onde:
+      df: data_referencia, dy_mes_pct, mm6, mm12, mm24
+      sinais: {"mm6": "↑"|"→"|"↓", "mm12": ..., "mm24": ...}
+    """
+    hist = get_dy_history(ticker, months=max(months, 24))
+    if hist.empty:
+        return pd.DataFrame(), {}
+
+    df = hist.copy()
+    df["dy_mes_pct"] = df["dy_mes"] * 100
+    df["mm6"]  = df["dy_mes_pct"].rolling(6,  min_periods=3).mean().round(4)
+    df["mm12"] = df["dy_mes_pct"].rolling(12, min_periods=6).mean().round(4)
+    df["mm24"] = df["dy_mes_pct"].rolling(24, min_periods=12).mean().round(4)
+
+    def _sinal(col: str) -> str:
+        s = df[col].dropna()
+        if len(s) < 2:
+            return "→"
+        delta = s.iloc[-1] - s.iloc[-2]
+        if delta > 0.03:
+            return "↑"
+        if delta < -0.03:
+            return "↓"
+        return "→"
+
+    sinais = {"mm6": _sinal("mm6"), "mm12": _sinal("mm12"), "mm24": _sinal("mm24")}
+    cols = ["data_referencia", "dy_mes_pct", "mm6", "mm12", "mm24"]
+    return df[[c for c in cols if c in df.columns]].tail(months), sinais
+
+
+def get_crescimento_pl(ticker: str) -> dict:
+    """
+    Retorna variacao percentual do PL e de cotistas em 12m e 24m.
+
+    Chaves: pl_atual, pl_var_12m, pl_var_24m,
+            nr_cotistas_atual, cotistas_var_12m, cotistas_var_24m
+    """
+    hist = get_dy_history(ticker, months=26)
+    if hist.empty:
+        return {}
+
+    def _var(series: pd.Series, periodos: int):
+        s = series.dropna()
+        if len(s) <= periodos:
+            return None
+        v_atual = float(s.iloc[-1])
+        v_ant   = float(s.iloc[-1 - periodos])
+        if v_ant == 0:
+            return None
+        return round((v_atual / v_ant - 1) * 100, 1)
+
+    pl = hist["patrimonio_liquido"]
+    ct = hist["nr_cotistas"]
+
+    return {
+        "pl_atual":           float(pl.dropna().iloc[-1]) if not pl.dropna().empty else None,
+        "pl_var_12m":         _var(pl, 12),
+        "pl_var_24m":         _var(pl, 24),
+        "nr_cotistas_atual":  int(ct.dropna().iloc[-1])   if not ct.dropna().empty else None,
+        "cotistas_var_12m":   _var(ct, 12),
+        "cotistas_var_24m":   _var(ct, 24),
+    }
+
+
+def get_composicao_receita(ticker: str, months: int = 3) -> pd.DataFrame:
+    """
+    Retorna composicao de receitas dos ultimos N meses:
+    imoveis_renda, cri, lci, contas_receber_aluguel como % do PL.
+
+    Colunas: mes, imoveis_renda_pct, cri_pct, lci_pct, aluguel_pct
+    """
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql("""
+        SELECT strftime('%Y-%m', im.data_referencia) AS mes,
+               im.imoveis_renda,
+               im.cri,
+               im.lci,
+               im.contas_receber_aluguel,
+               im.patrimonio_liquido
+        FROM inf_mensal im
+        JOIN fiis f ON f.cnpj = im.cnpj
+        WHERE f.ticker = ?
+          AND im.patrimonio_liquido > 0
+          AND im.data_referencia >= date('now', ? || ' months')
+        ORDER BY im.data_referencia DESC
+    """, conn, params=(ticker.upper(), f"-{months}"))
+    conn.close()
+
+    if df.empty:
+        return df
+
+    for col in ["imoveis_renda", "cri", "lci", "contas_receber_aluguel"]:
+        df[f"{col}_pct"] = (df[col] / df["patrimonio_liquido"] * 100).round(1)
+
+    return df[["mes", "imoveis_renda_pct", "cri_pct", "lci_pct",
+               "contas_receber_aluguel_pct"]].fillna(0)

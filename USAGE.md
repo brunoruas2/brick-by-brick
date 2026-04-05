@@ -80,14 +80,29 @@ python main.py screen --help
 Antes de comprar, analise o FII em detalhe e compare com alternativas do mesmo segmento.
 
 ```bash
-# Indicadores completos + histórico de DY dos últimos 13 meses
+# Indicadores completos + histórico de DY + tendências + PL/cotistas + composição de receita
 python main.py info HGLG11
+
+# Incluir histórico mensal de P/VP dos últimos 24 meses
+python main.py info HGLG11 --pvp-hist
+
+# Calcular YoC projetado a um preço-alvo de entrada
+python main.py info HGLG11 --yoc-alvo 150
 
 # Comparação lado a lado de dois ou mais FIIs
 python main.py compare HGLG11 XPLG11 BTLG11
 ```
 
-Indicadores exibidos: preço de mercado, VPA, P/VP, DY do mês, DY 12m, liquidez 30d, SELIC 12m, spread vs SELIC, consistência de proventos, gestor, taxa de administração.
+O `info` sempre exibe:
+- Preço de mercado, VPA, P/VP, DY mês, DY 12m, liquidez, spread vs SELIC
+- Histórico de DY dos últimos 13 meses
+- Tendência de DY com médias móveis MM6/MM12/MM24 e sinais de direção
+- Crescimento de PL e número de cotistas (variação 12m e 24m)
+- Composição de receita dos últimos 3 meses (imóveis, CRI, LCI como % do PL)
+
+Com `--pvp-hist`: série mensal de P/VP com média, mínimo e máximo.
+
+Com `--yoc-alvo PRECO`: mostra o YoC anual projetado caso você compre ao preço informado.
 
 ---
 
@@ -178,6 +193,13 @@ python main.py portfolio report
 # Relatório de um mês específico (usa preços e DY da competência correta)
 python main.py portfolio report --month 2025-12
 
+# Alocação por ativo e por segmento (com barra de proporção)
+python main.py portfolio allocation
+
+# Renda mensal em dividendos — gráfico de barras no terminal
+python main.py portfolio income
+python main.py portfolio income --meses 24   # últimos 24 meses
+
 # Histórico de dividendos recebidos: YoC mensal, acumulado e payback
 python main.py portfolio dividends
 
@@ -189,6 +211,10 @@ python main.py portfolio dividends --desde 2025-01
 
 # Apenas o sumário consolidado, sem detalhe mês a mês
 python main.py portfolio dividends --resumo
+
+# Exportar histórico completo para CSV ou Excel
+python main.py portfolio dividends --export historico.csv
+python main.py portfolio dividends --export historico.xlsx
 
 # Histórico de todas as operações
 python main.py portfolio history
@@ -219,15 +245,38 @@ python main.py portfolio history HGLG11
 | Recebido | Cotas detidas no mês × dividendo/cota |
 | YoC mês | Dividendo recebido / custo total × 100 |
 | YoC acum. | Total recebido / custo total × 100 (sumário por ativo) |
-| Payback | Percentual do custo de aquisição recuperado em dividendos |
+| Payback | Custo total ÷ média mensal dos últimos 6 meses de dividendos (em meses) |
+| Vol. mensal | Desvio padrão dos dividendos mensais — mede a estabilidade da renda |
 
 > A posição mensal é reconstruída a partir do histórico de compras e vendas — o relatório reflete exatamente quantas cotas você detinha em cada mês, ao preço médio vigente naquele momento.
 
 ---
 
-### 5b. Grupamentos e desdobramentos de cotas
+### 5b. Watchlist — monitorar candidatos sem comprar
 
-Alguns fundos realizam **grupamento** (reverse split: N cotas antigas → 1 nova) ou **desdobramento** (forward split: 1 cota → N novas). Sem registrar esses eventos, o histórico de dividendos ficaria distorcido.
+A watchlist permite acompanhar FIIs de interesse com indicadores atualizados e distância ao preço-alvo, sem precisar comprá-los.
+
+```bash
+# Adicionar um FII à watchlist
+python main.py portfolio watch HGLG11
+
+# Com preço-alvo e observação
+python main.py portfolio watch VISC11 --preco-alvo 100 --obs "aguardando abaixar P/VP"
+
+# Exibir a watchlist com indicadores atuais e distância ao alvo
+python main.py portfolio watchlist
+
+# Remover da watchlist
+python main.py portfolio watch HGLG11 --remove
+```
+
+A `watchlist` exibe: preço atual, preço-alvo, distância percentual (verde se abaixo do alvo), P/VP, DY 12m e spread vs SELIC.
+
+---
+
+### 5c. Grupamentos e desdobramentos de cotas
+
+Alguns fundos realizam **grupamento** (reverse split: N cotas → 1 nova) ou **desdobramento** (forward split: 1 cota → N novas). Sem registrar esses eventos, o histórico de dividendos ficaria distorcido.
 
 **Verificar se há anomalias na carteira:**
 
@@ -351,20 +400,24 @@ Gatilho: diário às 21:00
 ```
 python main.py update [fonte]              # Atualiza dados (all | cadastro | inf-mensal | cotahist | benchmarks)
 python main.py status                      # Estado do banco de dados
-python main.py screen [filtros]            # Screener com score ponderado
-python main.py info TICKER                 # Indicadores detalhados de um FII
+python main.py screen [filtros]            # Screener com score ponderado (--pl-min, --export)
+python main.py info TICKER [--pvp-hist] [--yoc-alvo PRECO]  # Análise completa de um FII
 python main.py compare TICKER [TICKER...]  # Comparação lado a lado
 
-python main.py portfolio add       TICKER COTAS PRECO DATA           # Registra compra
-python main.py portfolio sell      TICKER COTAS PRECO DATA           # Registra venda
-python main.py portfolio template  [--output ARQUIVO]                # Gera template Excel
-python main.py portfolio import    ARQUIVO [--dry-run]               # Importa do Excel
-python main.py portfolio show                                        # Posições com P&L
-python main.py portfolio report    [--month YYYY-MM]                 # Relatório mensal
-python main.py portfolio dividends   [--ticker T] [--desde YYYY-MM] [--resumo]  # Histórico de dividendos
-python main.py portfolio history     [TICKER]                                    # Histórico de operações
-python main.py portfolio check-splits [TICKER]                                   # Detecta grupamentos/desdobramentos nao registrados
-python main.py portfolio add-split   TICKER YYYY-MM FATOR [--tipo T] [--obs S]  # Registra evento de split
+python main.py portfolio add         TICKER COTAS PRECO DATA            # Registra compra
+python main.py portfolio sell        TICKER COTAS PRECO DATA            # Registra venda
+python main.py portfolio template    [--output ARQUIVO]                 # Gera template Excel
+python main.py portfolio import      ARQUIVO [--dry-run]                # Importa do Excel
+python main.py portfolio show                                           # Posições com P&L
+python main.py portfolio report      [--month YYYY-MM]                  # Relatório mensal
+python main.py portfolio allocation                                     # Alocação por ativo e segmento
+python main.py portfolio income      [--meses N]                        # Renda mensal em dividendos
+python main.py portfolio dividends   [--ticker T] [--desde YYYY-MM] [--resumo] [--export ARQ]
+python main.py portfolio history     [TICKER]                           # Histórico de operações
+python main.py portfolio watch       TICKER [--preco-alvo P] [--obs S] [--remove]
+python main.py portfolio watchlist                                      # Watchlist com indicadores
+python main.py portfolio check-splits [TICKER]                          # Detecta splits não registrados
+python main.py portfolio add-split   TICKER YYYY-MM FATOR [--tipo T] [--obs S]
 
 python main.py alerts [opções]             # Alertas e oportunidades
 python main.py scheduler                   # Agendador automático (foreground)

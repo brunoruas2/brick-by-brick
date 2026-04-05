@@ -131,6 +131,14 @@ CREATE TABLE IF NOT EXISTS grupamentos (
     criado_em       TEXT NOT NULL,
     UNIQUE(cnpj, data_grupamento)
 );
+
+CREATE TABLE IF NOT EXISTS watchlist (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker        TEXT NOT NULL UNIQUE,
+    preco_alvo    REAL,
+    obs           TEXT,
+    adicionado_em TEXT NOT NULL
+);
 """
 
 
@@ -149,6 +157,20 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.commit()
     except Exception:
         pass  # coluna ja existe
+    # Cria tabela watchlist (bancos criados antes desta versao)
+    try:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS watchlist (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker        TEXT NOT NULL UNIQUE,
+                preco_alvo    REAL,
+                obs           TEXT,
+                adicionado_em TEXT NOT NULL
+            );
+        """)
+        conn.commit()
+    except Exception:
+        pass
 
 
 def init_db() -> None:
@@ -351,6 +373,41 @@ def upsert_grupamento(record: dict) -> None:
     """
     with connect() as conn:
         conn.execute(sql, record)
+
+
+def upsert_watchlist(record: dict) -> None:
+    """
+    Insere ou atualiza um ticker na watchlist.
+    Chaves: ticker, preco_alvo (opcional), obs (opcional), adicionado_em
+    """
+    sql = """
+        INSERT INTO watchlist (ticker, preco_alvo, obs, adicionado_em)
+        VALUES (:ticker, :preco_alvo, :obs, :adicionado_em)
+        ON CONFLICT(ticker) DO UPDATE SET
+            preco_alvo    = excluded.preco_alvo,
+            obs           = excluded.obs,
+            adicionado_em = excluded.adicionado_em
+    """
+    with connect() as conn:
+        conn.execute(sql, record)
+
+
+def get_watchlist() -> list[dict]:
+    """Retorna todos os tickers da watchlist ordenados por data de adicao."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM watchlist ORDER BY adicionado_em DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def remove_watchlist(ticker: str) -> bool:
+    """Remove um ticker da watchlist. Retorna True se removido."""
+    with connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM watchlist WHERE ticker = ?", (ticker.upper(),)
+        )
+    return cur.rowcount > 0
 
 
 def get_grupamentos(tickers: list[str]) -> list[dict]:

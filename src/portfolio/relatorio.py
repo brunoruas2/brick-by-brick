@@ -370,6 +370,7 @@ def relatorio_dividendos(
     st.add_column("Meses",         justify="right", width=7)
     st.add_column("Recebido total",justify="right", width=14)
     st.add_column("YoC acum.",     justify="right", width=10)
+    st.add_column("Vol. mensal",   justify="right", width=11)
     st.add_column("Payback est.",  justify="right", width=11)
 
     total_recebido_geral  = 0.0
@@ -398,8 +399,10 @@ def relatorio_dividendos(
         total_custo_geral     += custo_total
         total_div_media_geral += div_media if div_media else 0.0
 
-        yoc_str     = f"{yoc_acum:.2f}%"        if yoc_acum      is not None else "--"
-        payback_str = f"~{payback_meses:.0f} m"  if payback_meses is not None else "--"
+        vol_renda   = sub["dividendo_recebido"].std()
+        yoc_str     = f"{yoc_acum:.2f}%"         if yoc_acum      is not None else "--"
+        vol_str     = f"R$ {vol_renda:.2f}"       if pd.notna(vol_renda)       else "--"
+        payback_str = f"~{payback_meses:.0f} m"   if payback_meses is not None else "--"
 
         st.add_row(
             t,
@@ -407,6 +410,7 @@ def relatorio_dividendos(
             str(meses),
             f"R$ {recebido:,.2f}",
             yoc_str,
+            vol_str,
             payback_str,
         )
 
@@ -433,3 +437,163 @@ def relatorio_dividendos(
                 f"~{payback_geral:.0f} meses ({payback_geral / 12:.1f} anos) no ritmo atual",
             )
         console.print(gt)
+
+
+# ---------------------------------------------------------------------------
+# Alocacao da carteira
+# ---------------------------------------------------------------------------
+
+def relatorio_alocacao() -> None:
+    """Mostra alocacao da carteira por ativo e por segmento."""
+    from src.analysis.indicadores import get_indicators_for
+
+    df = get_posicoes()
+    if df.empty:
+        console.print(
+            "[yellow]Carteira vazia. "
+            "Use: python main.py portfolio add TICKER COTAS PRECO DATA[/yellow]"
+        )
+        return
+
+    tickers = df["ticker"].tolist()
+    ind_all = get_indicators_for(tickers)
+    if not ind_all.empty and "segmento" in ind_all.columns:
+        ind = ind_all[["ticker", "segmento"]]
+        df = df.merge(ind, on="ticker", how="left")
+    else:
+        df["segmento"] = None
+
+    if "segmento" not in df.columns:
+        df["segmento"] = None
+
+    # valor_atual da posicao ou custo como fallback
+    df["valor_ref"] = df["valor_atual"].fillna(df["custo_total"])
+    total = df["valor_ref"].sum()
+    if total == 0:
+        console.print("[yellow]Sem dados de preco para calcular alocacao.[/yellow]")
+        return
+
+    df["peso"] = df["valor_ref"] / total * 100
+    df = df.sort_values("peso", ascending=False).reset_index(drop=True)
+
+    # --- Por ativo ---
+    console.print("\n[bold]Alocacao por ativo[/bold]")
+    t = Table(show_header=True, header_style="bold")
+    t.add_column("#",        justify="right",  width=3)
+    t.add_column("Ticker",   style="cyan",     width=8)
+    t.add_column("Segmento",                   width=16)
+    t.add_column("Cotas",    justify="right",  width=6)
+    t.add_column("P. Atual", justify="right",  width=9)
+    t.add_column("Valor",    justify="right",  width=12)
+    t.add_column("Peso",     justify="right",  width=6)
+    t.add_column("",                           width=15)
+
+    for i, r in df.iterrows():
+        barra_len = max(1, int(r["peso"] * 20 / 100))
+        barra = "[cyan]" + "#" * barra_len + "[/cyan]"
+        t.add_row(
+            str(i + 1),
+            r["ticker"],
+            str(r.get("segmento") or "--")[:20],
+            str(int(r["cotas"])),
+            f"R$ {r['preco_atual']:.2f}" if pd.notna(r.get("preco_atual")) else "--",
+            f"R$ {r['valor_ref']:,.2f}",
+            f"{r['peso']:.1f}%",
+            barra,
+        )
+    console.print(t)
+
+    # --- Por segmento ---
+    console.print("\n[bold]Alocacao por segmento[/bold]")
+    seg = (
+        df.assign(segmento=df["segmento"].fillna("Outros"))
+        .groupby("segmento")
+        .agg(valor=("valor_ref", "sum"), n_ativos=("ticker", "count"))
+        .reset_index()
+    )
+    seg["peso"] = seg["valor"] / total * 100
+    seg = seg.sort_values("peso", ascending=False)
+
+    st = Table(show_header=True, header_style="bold")
+    st.add_column("Segmento", width=25)
+    st.add_column("Ativos",   justify="right", width=7)
+    st.add_column("Valor",    justify="right", width=13)
+    st.add_column("Peso",     justify="right", width=7)
+    st.add_column("",                          width=20)
+
+    for _, r in seg.iterrows():
+        barra_len = max(1, int(r["peso"] * 20 / 100))
+        barra = "[green]" + "#" * barra_len + "[/green]"
+        st.add_row(
+            str(r["segmento"])[:25],
+            str(int(r["n_ativos"])),
+            f"R$ {r['valor']:,.2f}",
+            f"{r['peso']:.1f}%",
+            barra,
+        )
+    console.print(st)
+    console.print(f"\n[dim]Total carteira: R$ {total:,.2f}[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# Renda mensal da carteira
+# ---------------------------------------------------------------------------
+
+def relatorio_income(meses: int = 12) -> None:
+    """Mostra a renda mensal gerada pela carteira nos ultimos N meses."""
+    df = get_historico_dividendos()
+
+    if df.empty:
+        console.print(
+            "[yellow]Sem historico de dividendos. "
+            "Verifique se a carteira tem movimentacoes e se os dados estao atualizados.[/yellow]"
+        )
+        return
+
+    monthly = (
+        df.dropna(subset=["dividendo_recebido"])
+        .groupby("mes")
+        .agg(renda=("dividendo_recebido", "sum"), n_ativos=("ticker", "nunique"))
+        .reset_index()
+        .sort_values("mes")
+        .tail(meses)
+    )
+
+    if monthly.empty:
+        console.print("[yellow]Sem dados de dividendos para exibir.[/yellow]")
+        return
+
+    console.print(f"\n[bold]Renda mensal -- {len(monthly)} meses[/bold]")
+
+    max_renda = monthly["renda"].max()
+    t = Table(show_header=True, header_style="bold")
+    t.add_column("Mes",    width=8)
+    t.add_column("Ativos", justify="right", width=7)
+    t.add_column("Renda",  justify="right", width=13)
+    t.add_column("",                        width=30)
+
+    for _, r in monthly.iterrows():
+        barra_len = max(1, int(r["renda"] / max_renda * 30)) if max_renda > 0 else 1
+        barra = "[green]" + "#" * barra_len + "[/green]"
+        t.add_row(
+            str(r["mes"])[:7],
+            str(int(r["n_ativos"])),
+            f"R$ {r['renda']:,.2f}",
+            barra,
+        )
+    console.print(t)
+
+    media   = monthly["renda"].mean()
+    maxima  = monthly["renda"].max()
+    minima  = monthly["renda"].min()
+    total_r = monthly["renda"].sum()
+
+    console.print()
+    gt = Table(show_header=False, box=None, padding=(0, 2))
+    gt.add_column("Label", style="dim")
+    gt.add_column("Valor", style="bold")
+    gt.add_row("Media mensal",            f"R$ {media:,.2f}")
+    gt.add_row("Melhor mes",              f"R$ {maxima:,.2f}")
+    gt.add_row("Menor mes",               f"R$ {minima:,.2f}")
+    gt.add_row(f"Total {len(monthly)}m",  f"R$ {total_r:,.2f}")
+    console.print(gt)

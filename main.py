@@ -147,20 +147,35 @@ def screen(
     liq_min:    float = typer.Option(None,  "--liq-min",    help="Liquidez 30d minima (R$)"),
     spread_min: float = typer.Option(None,  "--spread-min", help="Spread vs SELIC minimo (%)"),
     segmento:   str   = typer.Option(None,  "--segmento",   help="Filtro de segmento"),
+    pl_min:     float = typer.Option(None,  "--pl-min",     help="Patrimonio liquido minimo (R$, ex: 500000000)"),
     top:        int   = typer.Option(20,    "--top",        help="Numero de resultados"),
+    export:     str   = typer.Option(None,  "--export",     help="Exportar resultado para CSV ou Excel (ex: resultado.csv)"),
 ):
     """Filtra e ranqueia FIIs por score ponderado."""
     import pandas as pd
+    from pathlib import Path
     from src.analysis.screener import screen as run_screen
 
     df = run_screen(
         dy_min=dy_min, pvp_max=pvp_max, liq_min=liq_min,
-        spread_min=spread_min, segmento=segmento, top_n=top,
+        spread_min=spread_min, segmento=segmento, pl_min=pl_min, top_n=top,
     )
 
     if df.empty:
         console.print("[yellow]Nenhum FII encontrado com esses filtros.[/yellow]")
         console.print("[dim]Dica: rode 'python main.py update' para atualizar os dados.[/dim]")
+        return
+
+    if export:
+        try:
+            p = Path(export)
+            if p.suffix.lower() in (".xlsx", ".xls"):
+                df.to_excel(export, index=False)
+            else:
+                df.to_csv(export, index=False, encoding="utf-8-sig")
+            console.print(f"[green]Exportado para:[/green] {export}")
+        except Exception as e:
+            console.print(f"[red]Erro ao exportar: {e}[/red]")
         return
 
     table = Table(show_header=True, header_style="bold", title=f"Top {len(df)} FIIs")
@@ -192,10 +207,17 @@ def screen(
 
 
 @app.command()
-def info(ticker: str = typer.Argument(..., help="Ticker do FII (ex: HGLG11)")):
+def info(
+    ticker:   str   = typer.Argument(...,  help="Ticker do FII (ex: HGLG11)"),
+    pvp_hist: bool  = typer.Option(False, "--pvp-hist", help="Exibe historico mensal de P/VP"),
+    yoc_alvo: float = typer.Option(None,  "--yoc-alvo", help="Preco alvo para calcular YoC projetado (R$)"),
+):
     """Exibe indicadores detalhados de um FII."""
     import pandas as pd
-    from src.analysis.indicadores import get_indicators_for, get_dy_history
+    from src.analysis.indicadores import (
+        get_indicators_for, get_dy_history,
+        get_dy_trend, get_crescimento_pl, get_composicao_receita, get_pvp_history,
+    )
 
     df = get_indicators_for([ticker])
     if df.empty:
@@ -230,6 +252,11 @@ def info(ticker: str = typer.Argument(..., help="Ticker do FII (ex: HGLG11)")):
     _add("Spread SELIC",  f"{row['spread_selic']:.2f}%"  if pd.notna(row.get('spread_selic')) else "--")
     _add("Consist. DY",   f"{row['consistencia_dy']:.4f}" if pd.notna(row.get('consistencia_dy')) else "--")
 
+    if yoc_alvo and pd.notna(row.get("dy_12m")) and pd.notna(row.get("preco")):
+        div_anual = float(row["preco"]) * float(row["dy_12m"]) / 100
+        yoc_proj  = div_anual / yoc_alvo * 100
+        _add(f"YoC @ R${yoc_alvo:.2f}", f"{yoc_proj:.2f}%  (div. anual R$ {div_anual:.2f})")
+
     console.print(ind)
 
     # Historico DY
@@ -245,6 +272,94 @@ def info(ticker: str = typer.Argument(..., help="Ticker do FII (ex: HGLG11)")):
             vpa = f"R$ {hr['vpa']:.2f}"   if pd.notna(hr['vpa'])    else "--"
             htable.add_row(str(hr['data_referencia'])[:7], dy, vpa)
         console.print(htable)
+
+    # Tendencia DY (medias moveis)
+    df_trend, sinais = get_dy_trend(ticker, months=24)
+    if not df_trend.empty:
+        console.print("\n[bold]Tendencia DY -- medias moveis:[/bold]")
+        _SINAL_MAP = {"\u2191": "(+)", "\u2192": "(=)", "\u2193": "(-)"}
+        sinal_str = "  ".join(
+            f"MM{k[2:]}: {_SINAL_MAP.get(v, v)}" for k, v in sinais.items()
+        )
+        console.print(f"[dim]{sinal_str}[/dim]")
+        tt = Table(show_header=True, header_style="dim")
+        tt.add_column("Referencia", width=10)
+        tt.add_column("DY mes",   justify="right", width=8)
+        tt.add_column("MM6",      justify="right", width=7)
+        tt.add_column("MM12",     justify="right", width=7)
+        tt.add_column("MM24",     justify="right", width=7)
+        for _, hr in df_trend.tail(12).iterrows():
+            tt.add_row(
+                str(hr["data_referencia"])[:7],
+                f"{hr['dy_mes_pct']:.2f}%" if pd.notna(hr.get("dy_mes_pct")) else "--",
+                f"{hr['mm6']:.2f}%"        if pd.notna(hr.get("mm6"))        else "--",
+                f"{hr['mm12']:.2f}%"       if pd.notna(hr.get("mm12"))       else "--",
+                f"{hr['mm24']:.2f}%"       if pd.notna(hr.get("mm24"))       else "--",
+            )
+        console.print(tt)
+
+    # Crescimento PL e cotistas
+    crescimento = get_crescimento_pl(ticker)
+    if crescimento:
+        console.print("\n[bold]Crescimento PL e cotistas:[/bold]")
+        ct = Table(show_header=False, box=None, padding=(0, 2))
+        ct.add_column("Label", style="dim")
+        ct.add_column("Valor", style="bold")
+        if crescimento.get("pl_atual") is not None:
+            ct.add_row("PL atual",          _fmt_reais(crescimento["pl_atual"]))
+        if crescimento.get("pl_var_12m") is not None:
+            ct.add_row("PL var. 12m",       f"{crescimento['pl_var_12m']:+.1f}%")
+        if crescimento.get("pl_var_24m") is not None:
+            ct.add_row("PL var. 24m",       f"{crescimento['pl_var_24m']:+.1f}%")
+        if crescimento.get("nr_cotistas_atual") is not None:
+            ct.add_row("Cotistas",          f"{crescimento['nr_cotistas_atual']:,}")
+        if crescimento.get("cotistas_var_12m") is not None:
+            ct.add_row("Cotistas var. 12m", f"{crescimento['cotistas_var_12m']:+.1f}%")
+        console.print(ct)
+
+    # Composicao de receita (ultimos 3 meses)
+    comp = get_composicao_receita(ticker, months=3)
+    if not comp.empty:
+        console.print("\n[bold]Composicao de receita (% do PL, ult. 3 meses):[/bold]")
+        cpt = Table(show_header=True, header_style="dim")
+        cpt.add_column("Mes",         width=8)
+        cpt.add_column("Imoveis",     justify="right", width=9)
+        cpt.add_column("CRI",         justify="right", width=8)
+        cpt.add_column("LCI",         justify="right", width=8)
+        cpt.add_column("Aluguel CR",  justify="right", width=10)
+        for _, cr in comp.iterrows():
+            cpt.add_row(
+                str(cr["mes"]),
+                f"{cr['imoveis_renda_pct']:.1f}%",
+                f"{cr['cri_pct']:.1f}%",
+                f"{cr['lci_pct']:.1f}%",
+                f"{cr['contas_receber_aluguel_pct']:.1f}%",
+            )
+        console.print(cpt)
+
+    # Historico P/VP (opcional)
+    if pvp_hist:
+        pvp_df = get_pvp_history(ticker, months=24)
+        if not pvp_df.empty:
+            console.print("\n[bold]Historico P/VP mensal (24 meses):[/bold]")
+            pvp_media = pvp_df["p_vp"].mean()
+            pvp_min   = pvp_df["p_vp"].min()
+            pvp_max   = pvp_df["p_vp"].max()
+            console.print(f"[dim]Media: {pvp_media:.3f}  Min: {pvp_min:.3f}  Max: {pvp_max:.3f}[/dim]")
+            pt = Table(show_header=True, header_style="dim")
+            pt.add_column("Mes",   width=8)
+            pt.add_column("VPA",   justify="right", width=10)
+            pt.add_column("Preco", justify="right", width=10)
+            pt.add_column("P/VP",  justify="right", width=8)
+            for _, pr in pvp_df.iterrows():
+                pvp_cor = "green" if float(pr["p_vp"]) < pvp_media else "red"
+                pt.add_row(
+                    str(pr["mes"]),
+                    f"R$ {pr['vpa']:.2f}" if pd.notna(pr.get("vpa")) else "--",
+                    f"R$ {pr['preco']:.2f}" if pd.notna(pr.get("preco")) else "--",
+                    f"[{pvp_cor}]{pr['p_vp']:.3f}[/{pvp_cor}]",
+                )
+            console.print(pt)
 
 
 @app.command()
@@ -579,9 +694,32 @@ def portfolio_dividends(
         False, "--resumo", "-r",
         help="Exibe apenas o sumario consolidado, sem detalhe mensal.",
     ),
+    export: str = typer.Option(
+        None, "--export",
+        help="Exportar historico para CSV ou Excel (ex: dividendos.csv).",
+    ),
 ):
     """Historico de dividendos recebidos: YoC mensal, acumulado e payback."""
     from src.portfolio.relatorio import relatorio_dividendos
+    from src.portfolio.carteira import get_historico_dividendos
+
+    if export:
+        from pathlib import Path
+        df = get_historico_dividendos(ticker=ticker, desde=desde)
+        if df.empty:
+            console.print("[yellow]Sem dados para exportar.[/yellow]")
+            return
+        try:
+            p = Path(export)
+            if p.suffix.lower() in (".xlsx", ".xls"):
+                df.to_excel(export, index=False)
+            else:
+                df.to_csv(export, index=False, encoding="utf-8-sig")
+            console.print(f"[green]Exportado para:[/green] {export}  ({len(df)} linhas)")
+        except Exception as e:
+            console.print(f"[red]Erro ao exportar: {e}[/red]")
+        return
+
     relatorio_dividendos(ticker=ticker, desde=desde, resumo=resumo)
 
 
@@ -694,6 +832,124 @@ def portfolio_history(
         )
 
     console.print(table)
+
+
+@portfolio_app.command("allocation")
+def portfolio_allocation():
+    """Mostra alocacao da carteira por ativo e por segmento."""
+    from src.portfolio.relatorio import relatorio_alocacao
+    relatorio_alocacao()
+
+
+@portfolio_app.command("income")
+def portfolio_income(
+    meses: int = typer.Option(12, "--meses", "-m", help="Numero de meses a exibir."),
+):
+    """Exibe a renda mensal recebida em dividendos (grafico de barras no terminal)."""
+    from src.portfolio.relatorio import relatorio_income
+    relatorio_income(meses=meses)
+
+
+@portfolio_app.command("watch")
+def portfolio_watch(
+    ticker:     str   = typer.Argument(..., help="Ticker do FII (ex: HGLG11)"),
+    preco_alvo: float = typer.Option(None, "--preco-alvo", "-p", help="Preco alvo de entrada (R$)"),
+    obs:        str   = typer.Option(None, "--obs",             help="Observacao opcional"),
+    remove:     bool  = typer.Option(False, "--remove",         help="Remove o ticker da watchlist"),
+):
+    """Adiciona ou remove um FII da watchlist de acompanhamento."""
+    import datetime as _dt
+    from src.storage.database import upsert_watchlist, remove_watchlist
+
+    from src.storage.database import init_db
+    init_db()
+
+    t = ticker.upper()
+    if remove:
+        ok = remove_watchlist(t)
+        if ok:
+            console.print(f"[green]{t} removido da watchlist.[/green]")
+        else:
+            console.print(f"[yellow]{t} nao estava na watchlist.[/yellow]")
+        return
+
+    upsert_watchlist({
+        "ticker":      t,
+        "preco_alvo":  preco_alvo,
+        "obs":         obs,
+        "adicionado_em": _dt.datetime.now().isoformat(timespec="seconds"),
+    })
+    msg = f"[green]{t} adicionado a watchlist.[/green]"
+    if preco_alvo:
+        msg += f"  Alvo: R$ {preco_alvo:.2f}"
+    console.print(msg)
+
+
+@portfolio_app.command("watchlist")
+def portfolio_watchlist():
+    """Exibe a watchlist com indicadores atuais dos FIIs monitorados."""
+    import pandas as pd
+    from src.storage.database import get_watchlist
+    from src.analysis.indicadores import get_indicators_for
+
+    from src.storage.database import init_db
+    init_db()
+
+    items = get_watchlist()
+    if not items:
+        console.print(
+            "[yellow]Watchlist vazia. "
+            "Adicione um FII com: python main.py portfolio watch TICKER[/yellow]"
+        )
+        return
+
+    tickers = [r["ticker"] for r in items]
+    ind = get_indicators_for(tickers)
+    ind_map = {r["ticker"]: r for _, r in ind.iterrows()} if not ind.empty else {}
+
+    t = Table(show_header=True, header_style="bold", title="Watchlist")
+    t.add_column("Ticker",    style="cyan",    width=8)
+    t.add_column("Preco",     justify="right", width=9)
+    t.add_column("P. Alvo",   justify="right", width=9)
+    t.add_column("Distancia", justify="right", width=10)
+    t.add_column("P/VP",      justify="right", width=6)
+    t.add_column("DY 12m",    justify="right", width=8)
+    t.add_column("Spread",    justify="right", width=8)
+    t.add_column("Obs",                        width=20)
+
+    for item in items:
+        tk    = item["ticker"]
+        ind_r = ind_map.get(tk, {})
+
+        preco     = ind_r.get("preco")
+        preco_str = f"R$ {preco:.2f}" if preco and pd.notna(preco) else "--"
+
+        alvo      = item.get("preco_alvo")
+        alvo_str  = f"R$ {alvo:.2f}" if alvo else "--"
+
+        if alvo and preco and pd.notna(preco):
+            dist = (preco / alvo - 1) * 100
+            cor  = "green" if dist <= 0 else "red"
+            dist_str = f"[{cor}]{dist:+.1f}%[/{cor}]"
+        else:
+            dist_str = "--"
+
+        pvp_v   = ind_r.get("p_vp")
+        dy12_v  = ind_r.get("dy_12m")
+        spr_v   = ind_r.get("spread_selic")
+
+        t.add_row(
+            tk,
+            preco_str,
+            alvo_str,
+            dist_str,
+            f"{pvp_v:.2f}"  if pvp_v  and pd.notna(pvp_v)  else "--",
+            f"{dy12_v:.1f}%" if dy12_v and pd.notna(dy12_v) else "--",
+            f"{spr_v:.1f}%"  if spr_v  and pd.notna(spr_v)  else "--",
+            str(item.get("obs") or "")[:20],
+        )
+
+    console.print(t)
 
 
 if __name__ == "__main__":
